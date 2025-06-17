@@ -147,15 +147,13 @@ export default class AIStrategist {
   tryCreateUnit(unitId, building) {
     const unitType = UNITS.find(u => u.id === unitId);
     if (!unitType) return;
-    // Проверяем ресурсы
     for (const res in unitType.cost) {
       if (this.getResource(res) < unitType.cost[res]) return;
     }
     const spot = this.findFreeSpotNearBuilding(building, 2);
     if (!spot) return;
-    // Списываем ресурсы
     for (const res in unitType.cost) {
-      this.spendResource(res, unitType.cost[res]);
+      this.spendResource(res, unitType.cost[res], `создание юнита ${unitType.name}`);
     }
     this.createUnit(unitType, spot.x * 32 + 16, spot.y * 32 + 16);
   }
@@ -245,60 +243,67 @@ export default class AIStrategist {
   findFreeBuildSpot(buildingType) {
     const map = this.scene.tileData;
     const size = buildingType.size;
-    // Вокруг своей базы (enemyBase)
     const base = this.scene.base || (this.scene.enemyBases && this.scene.enemyBases[0]);
     if (!base) return null;
     const cx = base.x, cy = base.y;
-    // Собираем занятые клетки (здания, очередь, ресурсы, юниты)
-    const obstacles = new Set();
-    // Построенные здания
-    for (const b of this.getAllBuildings()) {
-      for (let dx = 0; dx < b.size; dx++) for (let dy = 0; dy < b.size; dy++) {
-        obstacles.add(`${b.x + dx},${b.y + dy}`);
+    // Собираем bounding box всех построек и очереди
+    const allRects = [];
+    // Добавляем стартовую базу как препятствие (запрет на штаб)
+    if (this.scene.enemyBases) {
+      for (const baseRect of this.scene.enemyBases) {
+        allRects.push({ x: baseRect.x, y: baseRect.y, w: 2, h: 2, isHQ: true });
       }
     }
-    // Здания в очереди
+    for (const b of this.getAllBuildings()) {
+      allRects.push({ x: b.x, y: b.y, w: b.size, h: b.size, isHQ: b.type?.id === 'hq' || b.type === 'hq' });
+    }
     if (this.buildings.buildQueue) {
       for (const b of this.buildings.buildQueue) {
-        const t = BUILDINGS.find(t => t.id === b.type || t.id === b.type?.id);
+        const t = typeof b.type === 'string' ? BUILDINGS.find(t => t.id === b.type) : b.type;
         const sz = t ? t.size : b.size || 2;
-        for (let dx = 0; dx < sz; dx++) for (let dy = 0; dy < sz; dy++) {
-          obstacles.add(`${b.x + dx},${b.y + dy}`);
-        }
+        allRects.push({ x: b.x, y: b.y, w: sz, h: sz, isHQ: t?.id === 'hq' });
       }
     }
     // Ресурсы
     if (this.scene.resourceObjects) {
       for (const r of this.scene.resourceObjects) {
-        obstacles.add(`${r.x},${r.y}`);
+        allRects.push({ x: r.x, y: r.y, w: 1, h: 1, isHQ: false });
       }
-    }
-    // Юниты ИИ
-    for (const u of this.getAllUnits()) {
-      const tx = Math.floor(u.x / 32), ty = Math.floor(u.y / 32);
-      obstacles.add(`${tx},${ty}`);
     }
     // Перебираем клетки вокруг базы (спиралью)
     const radius = 12;
     for (let r = 0; r < radius; r++) {
       for (let dx = -r; dx <= r; dx++) {
         for (let dy = -r; dy <= r; dy++) {
-          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // только по периметру
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
           const x = cx + dx, y = cy + dy;
-          // Проверка границ
           if (x < 0 || y < 0 || x + size > map[0].length || y + size > map.length) continue;
           // Проверка тайлов (только трава или песок)
           let ok = true;
           for (let sx = 0; sx < size; sx++) for (let sy = 0; sy < size; sy++) {
             const t = map[y + sy][x + sx];
             if (!(t === 0 || t === 3)) ok = false;
-            if (obstacles.has(`${x + sx},${y + sy}`)) ok = false;
+          }
+          // Проверка отступа 2 тайла до других построек и запрет на штаб
+          for (const rect of allRects) {
+            if (this.rectsOverlapWithGap(x, y, size, size, rect.x, rect.y, rect.w, rect.h, 2)) ok = false;
+            if (rect.isHQ && this.rectsOverlapWithGap(x, y, size, size, rect.x, rect.y, rect.w, rect.h, 0)) ok = false;
           }
           if (ok) return { x, y };
         }
       }
     }
     return null;
+  }
+
+  // Проверка пересечения прямоугольников с отступом (gap)
+  rectsOverlapWithGap(x1, y1, w1, h1, x2, y2, w2, h2, gap) {
+    return !(
+      x1 + w1 + gap <= x2 - gap ||
+      x2 + w2 + gap <= x1 - gap ||
+      y1 + h1 + gap <= y2 - gap ||
+      y2 + h2 + gap <= y1 - gap
+    );
   }
 
   // --- Логика принятия решения о строительстве ---
@@ -364,7 +369,7 @@ export default class AIStrategist {
     const buildingType = typeof type === 'string' ? BUILDINGS.find(b => b.id === type) : type;
     if (!buildingType) return;
     for (const res in buildingType.cost) {
-      if (!this.spendResource(res, buildingType.cost[res])) return;
+      if (!this.spendResource(res, buildingType.cost[res], `строительство ${buildingType.name}`)) return;
     }
     this.buildings.queueBuilding(buildingType, x, y);
   }
@@ -383,11 +388,21 @@ export default class AIStrategist {
 
   // --- Память о видимых объектах ---
   updateMemory() {
-    // Видимость по всем своим юнитам
+    // Видимость по всем своим юнитам и зданиям
     const units = this.getAllUnits();
     const vision = [];
     for (const u of units) {
       vision.push({ x: u.x, y: u.y, r: u.type.vision });
+    }
+    // Добавляем радиус видимости зданий
+    for (const b of this.getAllBuildings()) {
+      let r = 200;
+      if (b.type?.id === 'hq' || b.type === 'hq') r = 700;
+      else if (b.type?.id === 'tower' || b.type === 'tower') r = 100;
+      // Координаты центра здания
+      const cx = (b.x + (b.size || b.type?.size || 2) / 2) * 32;
+      const cy = (b.y + (b.size || b.type?.size || 2) / 2) * 32;
+      vision.push({ x: cx, y: cy, r });
     }
     // --- Ресурсы ---
     if (this.scene.resourceObjects) {
@@ -455,17 +470,8 @@ export default class AIStrategist {
 
   // --- Определение нужных ресурсов ---
   getNeededResources() {
-    // Считаем, что нужно для строительства и юнитов в очереди
-    const needed = { золото: false, дерево: false, камень: false, металл: false };
-    // Если мало какого-то ресурса — он нужен
-    for (const res in needed) {
-      if (this.getResource(res) < 60) needed[res] = true;
-    }
-    for (const b of this.buildings.buildQueue || []) {
-      for (const res in b.type.cost) needed[res] = true;
-    }
-    // Можно добавить анализ планов
-    return needed;
+    // Теперь все ресурсы всегда считаются нужными
+    return { золото: true, дерево: true, камень: true, металл: true };
   }
 
   // --- Назначение задач разведчикам ---
@@ -551,11 +557,15 @@ export default class AIStrategist {
       this.resources[name] += value;
     }
   }
-  spendResource(name, value) {
+  spendResource(name, value, purpose = '') {
     if (this.resources.hasOwnProperty(name) && this.resources[name] >= value) {
       this.resources[name] -= value;
+      // Логирование трат
+      console.log(`ИИ потратил ${value} ${name} на ${purpose}. Осталось: ${this.resources[name]}`);
       return true;
     }
+    // Логирование неудачной попытки
+    console.log(`ИИ попытался потратить ${value} ${name} на ${purpose}, но не хватило. Осталось: ${this.resources[name]}`);
     return false;
   }
   getAllResources() {

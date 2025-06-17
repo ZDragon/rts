@@ -20,6 +20,18 @@ export default class BotUnit {
     this.hpBarBg = null;
     this.statusLabel = null;
     this.stateData = {};
+    this.createVisuals();
+  }
+
+  createVisuals() {
+    if (!this.scene || !this.scene.add) return;
+    const TILE_SIZE = 32;
+    const color = this.type.color || 0xff0000;
+    const radius = this.type.id === 'scout' ? 12 : 16;
+    this.sprite = this.scene.add.circle(this.x, this.y, radius, color).setDepth(30);
+    this.label = this.scene.add.text(this.x, this.y, this.type.name, { fontSize: '12px', color: '#222', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(31);
+    this.hpBarBg = this.scene.add.rectangle(this.x, this.y - 22, 32, 6, 0x444444).setDepth(32);
+    this.hpBar = this.scene.add.rectangle(this.x, this.y - 22, 32, 6, 0x00ff00).setDepth(33);
   }
 
   setState(state, data = {}) {
@@ -183,6 +195,15 @@ export class BotScout extends BotUnit {
     super(opts);
     this.setState('scout_idle');
   }
+  createVisuals() {
+    if (!this.scene || !this.scene.add) return;
+    const color = 0x00bcd4; // голубой
+    const radius = 12;
+    this.sprite = this.scene.add.star(this.x, this.y, 5, 8, radius, color).setDepth(30); // звезда
+    this.label = this.scene.add.text(this.x, this.y, 'Разведчик', { fontSize: '12px', color: '#00bcd4', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(31);
+    this.hpBarBg = this.scene.add.rectangle(this.x, this.y - 18, 28, 5, 0x444444).setDepth(32);
+    this.hpBar = this.scene.add.rectangle(this.x, this.y - 18, 28, 5, 0x00ff00).setDepth(33);
+  }
   handleState(dt) {
     switch (this.state) {
       case 'scout_idle':
@@ -215,6 +236,15 @@ export class BotWorker extends BotUnit {
     this.gatherCarried = 0;
     this.gatherTimer = 0;
     this.gatherBase = null;
+  }
+  createVisuals() {
+    if (!this.scene || !this.scene.add) return;
+    const color = 0xffeb3b; // жёлтый
+    const radius = 14;
+    this.sprite = this.scene.add.circle(this.x, this.y, radius, color).setDepth(30);
+    this.label = this.scene.add.text(this.x, this.y, 'Рабочий', { fontSize: '12px', color: '#bfa600', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(31);
+    this.hpBarBg = this.scene.add.rectangle(this.x, this.y - 22, 32, 6, 0x444444).setDepth(32);
+    this.hpBar = this.scene.add.rectangle(this.x, this.y - 22, 32, 6, 0x00ff00).setDepth(33);
   }
   handleState(dt) {
     switch (this.state) {
@@ -306,6 +336,33 @@ export class BotWorker extends BotUnit {
         super.handleState(dt);
     }
   }
+  findFreeAdjacentTile(targetX, targetY) {
+    // Возвращает координаты свободной соседней клетки вокруг (targetX, targetY)
+    const dirs = [
+      [0, -1], [1, 0], [0, 1], [-1, 0],
+      [1, -1], [1, 1], [-1, 1], [-1, -1]
+    ];
+    for (const [dx, dy] of dirs) {
+      const nx = targetX + dx;
+      const ny = targetY + dy;
+      // Проверка границ карты
+      if (nx < 0 || ny < 0 || nx >= this.scene.tileData[0].length || ny >= this.scene.tileData.length) continue;
+      // Проверка проходимости (трава или песок)
+      const t = this.scene.tileData[ny][nx];
+      if (t === 0 || t === 3) {
+        // Проверка, нет ли других юнитов на клетке
+        let blocked = false;
+        for (const u of this.scene.strategist.getAllUnits()) {
+          if (u !== this && Math.floor(u.x / 32) === nx && Math.floor(u.y / 32) === ny) {
+            blocked = true;
+            break;
+          }
+        }
+        if (!blocked) return { x: nx, y: ny };
+      }
+    }
+    return null;
+  }
 }
 
 // --- Класс солдата ---
@@ -317,6 +374,15 @@ export class BotSoldier extends BotUnit {
     this.attackCooldown = 0;
     this.attackDamage = 15;
     this.attackDelay = 0.7;
+  }
+  createVisuals() {
+    if (!this.scene || !this.scene.add) return;
+    const color = 0xe53935; // красный
+    const radius = 16;
+    this.sprite = this.scene.add.rectangle(this.x, this.y, radius * 2, radius * 2, color).setDepth(30); // квадрат
+    this.label = this.scene.add.text(this.x, this.y, 'Солдат', { fontSize: '12px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(31);
+    this.hpBarBg = this.scene.add.rectangle(this.x, this.y - 22, 32, 6, 0x444444).setDepth(32);
+    this.hpBar = this.scene.add.rectangle(this.x, this.y - 22, 32, 6, 0x00ff00).setDepth(33);
   }
   handleState(dt) {
     switch (this.state) {
@@ -425,6 +491,15 @@ export class BotTank extends BotUnit {
     this.attackCooldown = 0;
     this.attackDamage = 30;
     this.attackDelay = 1.2;
+  }
+  createVisuals() {
+    if (!this.scene || !this.scene.add) return;
+    const color = 0x607d8b; // серо-синий
+    const radius = 18;
+    this.sprite = this.scene.add.ellipse(this.x, this.y, radius * 2.4, radius * 1.3, color).setDepth(30); // эллипс
+    this.label = this.scene.add.text(this.x, this.y, 'Танк', { fontSize: '12px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(31);
+    this.hpBarBg = this.scene.add.rectangle(this.x, this.y - 24, 38, 7, 0x444444).setDepth(32);
+    this.hpBar = this.scene.add.rectangle(this.x, this.y - 24, 38, 7, 0x00ff00).setDepth(33);
   }
   handleState(dt) {
     switch (this.state) {
