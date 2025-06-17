@@ -1,6 +1,7 @@
 import Phaser from 'phaser';
 import resourceManager from '../logic/ResourceManager.js';
 import { BUILDINGS } from '../logic/Buildings.js';
+import { UNITS } from '../logic/Units.js';
 
 const TILE_SIZE = 32;
 const MAP_SIZE = 300;
@@ -133,6 +134,9 @@ export default class MissionScene extends Phaser.Scene {
     this.buildingsOnMap = [];
     this.buildQueue = [];
     this.buildPreview = null;
+    this.units = [];
+    this.selectedBuildingInstance = null;
+    this.unitCreateBtn = null;
 
     // Отмена выбора (ESC)
     this.input.keyboard.on('keydown-ESC', () => {
@@ -158,7 +162,11 @@ export default class MissionScene extends Phaser.Scene {
         } else {
           this.showMessage('Нельзя строить здесь!');
         }
+        return;
       }
+      // Проверка клика по зданию
+      const worldPoint = pointer.positionToCamera(this.cameras.main);
+      this.pointerDownOnMap(worldPoint.x, worldPoint.y);
     });
   }
 
@@ -393,5 +401,114 @@ export default class MissionScene extends Phaser.Scene {
       const barFg = this.add.rectangle(1270, y, 60 * progress, 12, 0x00ff00).setOrigin(0, 0.5).setDepth(152).setScrollFactor(0);
       this.queueUI.push({ name, barBg, barFg });
     });
+  }
+
+  // --- Выбор здания ---
+  // Добавить обработку клика по построенному зданию
+  pointerDownOnMap(worldX, worldY) {
+    // Проверяем, кликнули ли по зданию
+    const building = this.buildingsOnMap.find(b =>
+      worldX >= b.x * TILE_SIZE && worldX < (b.x + b.size) * TILE_SIZE &&
+      worldY >= b.y * TILE_SIZE && worldY < (b.y + b.size) * TILE_SIZE
+    );
+    if (building) {
+      this.selectBuildingInstance(building);
+      return true;
+    }
+    this.deselectBuildingInstance();
+    return false;
+  }
+
+  selectBuildingInstance(building) {
+    this.selectedBuildingInstance = building;
+    this.infoText.setText(`Выбрано: ${building.type.name}`);
+    // Если здание может создавать юнитов — показать кнопку
+    const unitType = UNITS.find(u => u.building === building.type.id);
+    if (unitType) {
+      if (this.unitCreateBtn) this.unitCreateBtn.destroy();
+      this.unitCreateBtn = this.add.text(640, 660, `Создать: ${unitType.name}`, {
+        fontSize: '20px', color: '#fff', backgroundColor: '#388e3c', padding: { left: 16, right: 16, top: 8, bottom: 8 }, fontFamily: 'sans-serif'
+      }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setInteractive({ useHandCursor: true });
+      this.unitCreateBtn.on('pointerdown', () => {
+        if (this.payUnitCost(unitType)) {
+          this.createUnitNearBuilding(unitType, building);
+          this.showMessage(`${unitType.name} создан!`);
+        } else {
+          this.showMessage('Недостаточно ресурсов!');
+        }
+      });
+    } else {
+      if (this.unitCreateBtn) { this.unitCreateBtn.destroy(); this.unitCreateBtn = null; }
+    }
+  }
+
+  deselectBuildingInstance() {
+    this.selectedBuildingInstance = null;
+    this.infoText.setText('Информация о выбранном объекте');
+    if (this.unitCreateBtn) { this.unitCreateBtn.destroy(); this.unitCreateBtn = null; }
+  }
+
+  payUnitCost(unitType) {
+    for (const res in unitType.cost) {
+      if (resourceManager.get(res) < unitType.cost[res]) return false;
+    }
+    for (const res in unitType.cost) {
+      resourceManager.spend(res, unitType.cost[res]);
+    }
+    this.updateResText();
+    return true;
+  }
+
+  createUnitNearBuilding(unitType, building) {
+    // Радиус юнита
+    const unitRadius = 16;
+    // Кандидаты для появления (по кругу вокруг здания)
+    const candidates = [];
+    const bx = building.x * TILE_SIZE;
+    const by = building.y * TILE_SIZE;
+    const bsize = building.size * TILE_SIZE;
+    // 8 направлений вокруг здания, потом дальше по кругу
+    for (let r = 1; r <= 3; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // только по периметру
+          const px = bx + bsize / 2 + dx * (unitRadius * 2 + 4);
+          const py = by + bsize / 2 + dy * (unitRadius * 2 + 4);
+          candidates.push({ px, py });
+        }
+      }
+    }
+    // Проверка на пересечение с другими юнитами и зданиями
+    let found = null;
+    for (const pos of candidates) {
+      if (!this.isPositionBlocked(pos.px, pos.py, unitRadius)) {
+        found = pos;
+        break;
+      }
+    }
+    if (!found) {
+      this.showMessage('Нет места для юнита!');
+      return;
+    }
+    const sprite = this.add.circle(found.px, found.py, unitRadius, unitType.color).setDepth(30);
+    const label = this.add.text(found.px, found.py, unitType.name, { fontSize: '12px', color: '#222', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(31);
+    this.units.push({ x: found.px, y: found.py, type: unitType, sprite, label, selected: false });
+  }
+
+  isPositionBlocked(px, py, radius) {
+    // Проверка на пересечение с юнитами
+    for (const u of this.units) {
+      const dist = Phaser.Math.Distance.Between(px, py, u.x, u.y);
+      if (dist < radius * 2) return true;
+    }
+    // Проверка на пересечение со зданиями
+    for (const b of this.buildingsOnMap) {
+      const left = b.x * TILE_SIZE;
+      const right = (b.x + b.size) * TILE_SIZE;
+      const top = b.y * TILE_SIZE;
+      const bottom = (b.y + b.size) * TILE_SIZE;
+      if (px + radius > left && px - radius < right && py + radius > top && py - radius < bottom) return true;
+    }
+    return false;
   }
 } 
