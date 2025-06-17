@@ -2,9 +2,13 @@ import Phaser from 'phaser';
 import resourceManager from '../logic/ResourceManager.js';
 import { BUILDINGS } from '../logic/Buildings.js';
 import { UNITS } from '../logic/Units.js';
+import { MAPS } from '../logic/Maps.js';
+import ResourceGathering from '../logic/ResourceGathering.js';
+import AIEnemy from '../logic/AI.js';
+import PlayerUnitsController from '../logic/PlayerUnits.js';
 
 const TILE_SIZE = 32;
-const MAP_SIZE = 300;
+const MAP_SIZE = 100;
 const VIEWPORT_WIDTH = 1280;
 const VIEWPORT_HEIGHT = 720;
 const SCROLL_SPEED = 16;
@@ -78,16 +82,51 @@ export default class MissionScene extends Phaser.Scene {
     this.queueUI = [];
 
     // --- Генерация карты ---
-    this.tileData = [];
-    for (let y = 0; y < MAP_SIZE; y++) {
-      this.tileData[y] = [];
-      for (let x = 0; x < MAP_SIZE; x++) {
-        this.tileData[y][x] = randomTileType();
-      }
-    }
-
+    const mapIndex = (this.missionNumber - 1) % MAPS.length;
+    const map = MAPS[mapIndex];
+    this.tileData = map.tileData.map(row => [...row]);
     this.tileLayer = this.add.layer();
     this.renderTiles();
+
+    // --- Размещение стартовых баз игрока ---
+    this.playerBases = [];
+    for (const base of map.playerBases) {
+      const px = base.x * TILE_SIZE + TILE_SIZE;
+      const py = base.y * TILE_SIZE + TILE_SIZE;
+      const rect = this.add.rectangle(px, py, TILE_SIZE * 2, TILE_SIZE * 2, 0x1976d2).setDepth(50);
+      const label = this.add.text(px, py, 'База игрока', { fontSize: '14px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(51);
+      this.playerBases.push({x: base.x, y: base.y, rect, label});
+    }
+    // --- Размещение баз врага ---
+    this.enemyBases = [];
+    for (const base of map.enemyBases) {
+      const px = base.x * TILE_SIZE + TILE_SIZE;
+      const py = base.y * TILE_SIZE + TILE_SIZE;
+      const rect = this.add.rectangle(px, py, TILE_SIZE * 2, TILE_SIZE * 2, 0x8B2222).setDepth(50);
+      const label = this.add.text(px, py, 'База ИИ', { fontSize: '14px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(51);
+      this.enemyBases.push({x: base.x, y: base.y, rect, label});
+    }
+    // --- Инициализация ИИ ---
+    this.aiEnemies = this.enemyBases.map(base => new AIEnemy(this, base));
+    // --- Размещение ресурсов ---
+    this.resourceObjects = [];
+    for (const res of map.resources) {
+      const px = res.x * TILE_SIZE + TILE_SIZE;
+      const py = res.y * TILE_SIZE + TILE_SIZE;
+      let color = 0xffd700;
+      if (res.type === 'дерево') color = 0x388e3c;
+      if (res.type === 'камень') color = 0x888888;
+      if (res.type === 'металл') color = 0x1976d2;
+      const circ = this.add.circle(px, py, TILE_SIZE * 0.7, color).setDepth(40);
+      const label = this.add.text(px, py, res.type, { fontSize: '12px', color: '#222', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(41);
+      const amountLabel = this.add.text(px, py - 18, res.amount.toString(), { fontSize: '12px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(42);
+      this.resourceObjects.push({type: res.type, x: res.x, y: res.y, amount: res.amount, circ, label, amountLabel});
+    }
+    this.updateResourceLabels = () => {
+      for (const res of this.resourceObjects) {
+        res.amountLabel.setText(res.amount.toString());
+      }
+    };
 
     // --- Камера ---
     this.cameras.main.setBounds(0, 0, MAP_SIZE * TILE_SIZE, MAP_SIZE * TILE_SIZE);
@@ -222,13 +261,31 @@ export default class MissionScene extends Phaser.Scene {
       }
     });
 
-    // Групповое перемещение ПКМ
+    // --- Контроллер управления юнитами игрока ---
+    this.playerUnitsController = new PlayerUnitsController(this);
+
+    // Изменяем обработчик ПКМ: если выбран рабочий и клик по ресурсу — назначить задачу добычи
     this.input.on('pointerdown', (pointer) => {
       if (pointer.rightButtonDown() && this.selectedUnits.length > 0) {
         const worldPoint = pointer.positionToCamera(this.cameras.main);
-        this.moveGroupTo(worldPoint.x, worldPoint.y);
+        // Проверка: клик по ресурсу
+        const resourceObj = this.resourceObjects.find(r => Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, r.circ.x, r.circ.y) < TILE_SIZE);
+        if (resourceObj) {
+          this.selectedUnits.forEach(u => {
+            if (u.type.id === 'worker') {
+              this.resourceGathering.assignGatherTask(u, resourceObj);
+            }
+          });
+          return;
+        }
+        // Управление атакой и перемещением через контроллер
+        if (!this.playerUnitsController.handleRightClick(worldPoint, this.selectedUnits)) {
+          this.playerUnitsController.moveGroupTo(this.selectedUnits, worldPoint.x, worldPoint.y);
+        }
       }
     });
+
+    this.resourceGathering = new ResourceGathering(this);
   }
 
   update(time, delta) {
@@ -254,12 +311,21 @@ export default class MissionScene extends Phaser.Scene {
     this.updateBuildPreview();
     this.updateBuildQueueUI();
 
-    // Перемещение юнитов
-    this.updateUnits(delta / 1000);
+    // Перемещение и атака юнитов игрока
+    this.playerUnitsController.update(delta / 1000);
 
     // Снятие выделения по клику на пустое место
     if (this.input.activePointer.leftButtonDown() && !this.isSelecting && !this.selectedBuilding && !this.isDragging) {
       this.deselectAllUnits();
+    }
+
+    this.resourceGathering.update(delta / 1000);
+
+    // --- Логика ИИ ---
+    if (this.aiEnemies) {
+      for (const ai of this.aiEnemies) {
+        ai.update(delta / 1000, time / 1000);
+      }
     }
   }
 
@@ -417,6 +483,12 @@ export default class MissionScene extends Phaser.Scene {
         b.barFg.setVisible(false);
         b.buildText.setVisible(false);
         b.label.setText(b.type.name);
+        // --- Добавляем HP и полоску HP ---
+        b.maxHP = b.type.maxHP || 300;
+        b.hp = b.maxHP;
+        const size = b.type.size * TILE_SIZE;
+        b.hpBarBg = this.add.rectangle(b.x * TILE_SIZE + size / 2, b.y * TILE_SIZE + 8, size - 8, 8, 0x444444).setDepth(22);
+        b.hpBar = this.add.rectangle(b.x * TILE_SIZE + size / 2, b.y * TILE_SIZE + 8, size - 8, 8, 0x00ff00).setDepth(23);
         // Переносим в массив построенных зданий
         this.buildingsOnMap.push(b);
       }
@@ -561,7 +633,12 @@ export default class MissionScene extends Phaser.Scene {
     }
     const sprite = this.add.circle(found.px, found.py, unitRadius, unitType.color).setDepth(30);
     const label = this.add.text(found.px, found.py, unitType.name, { fontSize: '12px', color: '#222', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(31);
-    this.units.push({ x: found.px, y: found.py, type: unitType, sprite, label, selected: false });
+    // HP
+    const maxHP = unitType.id === 'worker' ? 40 : unitType.id === 'soldier' ? 80 : 120;
+    const hp = maxHP;
+    const hpBarBg = this.add.rectangle(found.px, found.py - 22, 32, 6, 0x444444).setDepth(32);
+    const hpBar = this.add.rectangle(found.px, found.py - 22, 32, 6, 0x00ff00).setDepth(33);
+    this.units.push({ x: found.px, y: found.py, type: unitType, sprite, label, selected: false, hp, maxHP, hpBar, hpBarBg });
   }
 
   isPositionBlocked(px, py, radius) {
@@ -605,47 +682,5 @@ export default class MissionScene extends Phaser.Scene {
     this.selectedUnits.forEach(u => u.sprite.setStrokeStyle());
     this.selectedUnits = [];
     this.infoText.setText('Информация о выбранном объекте');
-  }
-
-  updateUnits(dt) {
-    for (const u of this.units) {
-      if (u.target) {
-        const dx = u.target.x - u.x;
-        const dy = u.target.y - u.y;
-        const dist = Math.sqrt(dx * dx + dy * dy);
-        const speed = 80; // пикселей в секунду
-        if (dist > 2) {
-          const move = Math.min(speed * dt, dist);
-          u.x += (dx / dist) * move;
-          u.y += (dy / dist) * move;
-          u.sprite.x = u.x;
-          u.sprite.y = u.y;
-          u.label.x = u.x;
-          u.label.y = u.y;
-        } else {
-          u.x = u.target.x;
-          u.y = u.target.y;
-          u.sprite.x = u.x;
-          u.sprite.y = u.y;
-          u.label.x = u.x;
-          u.label.y = u.y;
-          delete u.target;
-        }
-      }
-    }
-  }
-
-  moveGroupTo(x, y) {
-    // Расставляем цели с разлётом для группы
-    const n = this.selectedUnits.length;
-    const angleStep = (2 * Math.PI) / Math.max(1, n);
-    const radius = 30 + 10 * n;
-    this.selectedUnits.forEach((u, i) => {
-      const angle = i * angleStep;
-      u.target = {
-        x: x + Math.cos(angle) * radius,
-        y: y + Math.sin(angle) * radius
-      };
-    });
   }
 } 
