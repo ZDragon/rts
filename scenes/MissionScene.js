@@ -137,6 +137,11 @@ export default class MissionScene extends Phaser.Scene {
     this.units = [];
     this.selectedBuildingInstance = null;
     this.unitCreateBtn = null;
+    this.selectedUnit = null;
+    this.selectedUnits = [];
+    this.selectBox = null;
+    this.isSelecting = false;
+    this.selectStart = { x: 0, y: 0 };
 
     // Отмена выбора (ESC)
     this.input.keyboard.on('keydown-ESC', () => {
@@ -168,6 +173,62 @@ export default class MissionScene extends Phaser.Scene {
       const worldPoint = pointer.positionToCamera(this.cameras.main);
       this.pointerDownOnMap(worldPoint.x, worldPoint.y);
     });
+
+    // --- Групповой и одиночный выбор юнитов ---
+    this.input.on('pointerdown', (pointer) => {
+      if (pointer.leftButtonDown() && !this.selectedBuilding && !this.isDragging) {
+        const worldPoint = pointer.positionToCamera(this.cameras.main);
+        this.selectStart = { x: worldPoint.x, y: worldPoint.y };
+        this.isSelecting = true;
+        if (this.selectBox) this.selectBox.destroy();
+        this.selectBox = this.add.rectangle(worldPoint.x, worldPoint.y, 1, 1, 0x00ff00, 0.15).setOrigin(0).setDepth(300);
+      }
+    });
+    this.input.on('pointermove', (pointer) => {
+      if (this.isSelecting && this.selectBox) {
+        const worldPoint = pointer.positionToCamera(this.cameras.main);
+        const x = Math.min(this.selectStart.x, worldPoint.x);
+        const y = Math.min(this.selectStart.y, worldPoint.y);
+        const w = Math.abs(this.selectStart.x - worldPoint.x);
+        const h = Math.abs(this.selectStart.y - worldPoint.y);
+        this.selectBox.setPosition(x, y);
+        this.selectBox.setSize(w, h);
+      }
+    });
+    this.input.on('pointerup', (pointer) => {
+      if (this.isSelecting && !this.selectedBuilding && !this.isDragging) {
+        const worldPoint = pointer.positionToCamera(this.cameras.main);
+        const dx = Math.abs(this.selectStart.x - worldPoint.x);
+        const dy = Math.abs(this.selectStart.y - worldPoint.y);
+        const dragThreshold = 5;
+        if (dx < dragThreshold && dy < dragThreshold) {
+          // Это клик — выделяем юнита под курсором
+          const unit = this.units.find(u => Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, u.x, u.y) < 18);
+          if (unit) {
+            this.selectSingleUnit(unit);
+          } else {
+            this.deselectAllUnits();
+          }
+        } else {
+          // Это drag — выделяем рамкой
+          const x = Math.min(this.selectStart.x, worldPoint.x);
+          const y = Math.min(this.selectStart.y, worldPoint.y);
+          const w = Math.abs(this.selectStart.x - worldPoint.x);
+          const h = Math.abs(this.selectStart.y - worldPoint.y);
+          this.selectUnitsInBox(x, y, w, h);
+        }
+        if (this.selectBox) { this.selectBox.destroy(); this.selectBox = null; }
+        this.isSelecting = false;
+      }
+    });
+
+    // Групповое перемещение ПКМ
+    this.input.on('pointerdown', (pointer) => {
+      if (pointer.rightButtonDown() && this.selectedUnits.length > 0) {
+        const worldPoint = pointer.positionToCamera(this.cameras.main);
+        this.moveGroupTo(worldPoint.x, worldPoint.y);
+      }
+    });
   }
 
   update(time, delta) {
@@ -192,6 +253,14 @@ export default class MissionScene extends Phaser.Scene {
     // Превью здания под мышью
     this.updateBuildPreview();
     this.updateBuildQueueUI();
+
+    // Перемещение юнитов
+    this.updateUnits(delta / 1000);
+
+    // Снятие выделения по клику на пустое место
+    if (this.input.activePointer.leftButtonDown() && !this.isSelecting && !this.selectedBuilding && !this.isDragging) {
+      this.deselectAllUnits();
+    }
   }
 
   handleArrowKeys(event) {
@@ -510,5 +579,73 @@ export default class MissionScene extends Phaser.Scene {
       if (px + radius > left && px - radius < right && py + radius > top && py - radius < bottom) return true;
     }
     return false;
+  }
+
+  selectSingleUnit(unit) {
+    this.selectedUnits.forEach(u => u.sprite.setStrokeStyle());
+    this.selectedUnits = [unit];
+    unit.sprite.setStrokeStyle(3, 0xffff00);
+    this.infoText.setText(`Выбран: ${unit.type.name}`);
+  }
+  selectUnitsInBox(x, y, w, h) {
+    this.selectedUnits.forEach(u => u.sprite.setStrokeStyle());
+    this.selectedUnits = this.units.filter(u =>
+      u.x > x && u.x < x + w && u.y > y && u.y < y + h
+    );
+    this.selectedUnits.forEach(u => u.sprite.setStrokeStyle(3, 0xffff00));
+    if (this.selectedUnits.length === 1) {
+      this.infoText.setText(`Выбран: ${this.selectedUnits[0].type.name}`);
+    } else if (this.selectedUnits.length > 1) {
+      this.infoText.setText(`Выбрано юнитов: ${this.selectedUnits.length}`);
+    } else {
+      this.infoText.setText('Информация о выбранном объекте');
+    }
+  }
+  deselectAllUnits() {
+    this.selectedUnits.forEach(u => u.sprite.setStrokeStyle());
+    this.selectedUnits = [];
+    this.infoText.setText('Информация о выбранном объекте');
+  }
+
+  updateUnits(dt) {
+    for (const u of this.units) {
+      if (u.target) {
+        const dx = u.target.x - u.x;
+        const dy = u.target.y - u.y;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const speed = 80; // пикселей в секунду
+        if (dist > 2) {
+          const move = Math.min(speed * dt, dist);
+          u.x += (dx / dist) * move;
+          u.y += (dy / dist) * move;
+          u.sprite.x = u.x;
+          u.sprite.y = u.y;
+          u.label.x = u.x;
+          u.label.y = u.y;
+        } else {
+          u.x = u.target.x;
+          u.y = u.target.y;
+          u.sprite.x = u.x;
+          u.sprite.y = u.y;
+          u.label.x = u.x;
+          u.label.y = u.y;
+          delete u.target;
+        }
+      }
+    }
+  }
+
+  moveGroupTo(x, y) {
+    // Расставляем цели с разлётом для группы
+    const n = this.selectedUnits.length;
+    const angleStep = (2 * Math.PI) / Math.max(1, n);
+    const radius = 30 + 10 * n;
+    this.selectedUnits.forEach((u, i) => {
+      const angle = i * angleStep;
+      u.target = {
+        x: x + Math.cos(angle) * radius,
+        y: y + Math.sin(angle) * radius
+      };
+    });
   }
 } 
