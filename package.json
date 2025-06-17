@@ -1,0 +1,19 @@
+{
+  "name": "rts-phaser",
+  "version": "1.0.0",
+  "description": "RTS на PhaserJS. Сцены: меню, хаб, карта, миссия.",
+  "main": "main.js",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "phaser": "^3.60.0"
+  },
+  "devDependencies": {
+    "vite": "^5.0.0"
+  }
+} 
