@@ -290,4 +290,4 @@ export default class PlayerUnitsController {
       u.attackTarget = null;
     }
   }
-} 
+}

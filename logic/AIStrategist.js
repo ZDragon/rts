@@ -1,0 +1,564 @@
+import AIBaseBuildingController from './AIBaseBuildingController.js';
+import AIUnitsController from './AIUnitsController.js';
+import { BUILDINGS } from './Buildings.js';
+import { UNITS } from './Units.js';
+
+export default class AIStrategist {
+  constructor(scene, startResources = { золото: 500, дерево: 300, камень: 200, металл: 100 }) {
+    this.scene = scene;
+    this.buildings = new AIBaseBuildingController(scene);
+    this.units = new AIUnitsController(scene);
+    // Здесь можно хранить память, цели, флаги, таймеры и т.д.
+    this.lastBuildCheck = 0;
+    this.status = 'Анализ...';
+    this.priority = 'development'; // development | defense
+    this.statusLabel = null;
+    // --- Память о видимых объектах ---
+    this.memory = {
+      resources: new Map(), // key: `${x},${y}`
+      enemyBases: new Map(),
+      enemyUnits: new Map(),
+    };
+    this.playerContact = false;
+    this.resources = { ...startResources };
+  }
+
+  update(dt, time) {
+    // Главный цикл принятия решений ИИ
+    // 1. Анализ ситуации (ресурсы, враги, карта)
+    // 2. Решение: что строить, каких юнитов создавать, куда отправлять
+    // 3. Делегирование задач buildings и units
+    this.buildings.update(dt);
+    this.units.update(dt);
+
+    // Проверяем необходимость строительства раз в 1.5 сек
+    this.lastBuildCheck = this.lastBuildCheck || 0;
+    this.lastBuildCheck += dt;
+    if (this.lastBuildCheck < 1.5) return;
+    this.lastBuildCheck = 0;
+
+    this.analyzeSituation();
+    this.makeBuildDecision();
+    this.makeUnitDecision();
+    this.updateStatusLabel();
+    this.updateMemory();
+    this.assignWorkerTasks();
+    this.assignScoutTasks();
+    this.assignCombatTasks();
+  }
+
+  // --- Анализ ситуации и смена приоритета ---
+  analyzeSituation() {
+    // Считаем свои войска и постройки
+    const units = this.getAllUnits();
+    const buildings = this.getAllBuildings();
+    const queue = this.buildings.buildQueue || [];
+    const countUnits = id => units.filter(u => u.type.id === id).length;
+    const countBuildings = id => buildings.filter(b => b.type?.id === id || b.type === id).length + queue.filter(b => b.type === id || b.type?.id === id).length;
+    // Оцениваем угрозу: если рядом с базой есть вражеские юниты или мало защитных построек/юнитов
+    let threat = false;
+    let enemyNear = false;
+    if (this.scene && this.scene.playerUnitsController && this.scene.playerUnitsController.units) {
+      const enemyUnits = this.scene.playerUnitsController.units;
+      const hqs = buildings.filter(b => b.type?.id === 'hq' || b.type === 'hq');
+      for (const hq of hqs) {
+        for (const eu of enemyUnits) {
+          const dist = Math.hypot(eu.x/32 - hq.x, eu.y/32 - hq.y);
+          if (dist < 8) enemyNear = true;
+        }
+      }
+    }
+    // Если мало солдат/танков/башен или враг рядом — приоритет защита
+    const soldiers = countUnits('soldier');
+    const tanks = countUnits('tank');
+    const towers = countBuildings('tower');
+    if (enemyNear || (soldiers + tanks < 3 && towers < 1)) {
+      this.priority = 'defense';
+      this.status = enemyNear ? 'Враг у базы! Защита!' : 'Укрепление обороны';
+    } else {
+      this.priority = 'development';
+      this.status = 'Развитие экономики и построек';
+    }
+  }
+
+  // --- Решение о создании юнитов ---
+  makeUnitDecision() {
+    const units = this.getAllUnits();
+    const buildings = this.getAllBuildings();
+    const queue = this.buildings.buildQueue || [];
+    // Считаем по типам
+    const countUnits = id => units.filter(u => u.type.id === id).length;
+    const countBuildings = id => buildings.filter(b => b.type?.id === id || b.type === id).length + queue.filter(b => b.type === id || b.type?.id === id).length;
+    // --- Рабочие ---
+    const hqCount = countBuildings('hq');
+    const workerCount = countUnits('worker');
+    if (hqCount > 0 && workerCount < hqCount * 3) {
+      // Создаём рабочих, если приоритет развитие или рабочих очень мало
+      if (this.priority === 'development' || workerCount < 2) {
+        const hqs = buildings.filter(b => b.type?.id === 'hq' || b.type === 'hq');
+        for (const hq of hqs) {
+          if (units.filter(u => u.type.id === 'worker' && this.isNear(u, hq, 2)).length < 3) {
+            this.tryCreateUnit('worker', hq);
+          }
+        }
+      }
+    }
+    // --- Солдаты ---
+    const barracksCount = countBuildings('barracks');
+    const soldierCount = countUnits('soldier');
+    if (barracksCount > 0 && soldierCount < barracksCount * 5) {
+      if (this.priority === 'defense' || soldierCount < 2) {
+        const barracks = buildings.filter(b => b.type?.id === 'barracks' || b.type === 'barracks');
+        for (const bar of barracks) {
+          if (units.filter(u => u.type.id === 'soldier' && this.isNear(u, bar, 2)).length < 5) {
+            this.tryCreateUnit('soldier', bar);
+          }
+        }
+      }
+    }
+    // --- Танки ---
+    const factoryCount = countBuildings('factory');
+    const tankCount = countUnits('tank');
+    if (factoryCount > 0 && tankCount < factoryCount * 3) {
+      if (this.priority === 'defense' && tankCount < 3) {
+        const factories = buildings.filter(b => b.type?.id === 'factory' || b.type === 'factory');
+        for (const fac of factories) {
+          if (units.filter(u => u.type.id === 'tank' && this.isNear(u, fac, 2)).length < 3) {
+            this.tryCreateUnit('tank', fac);
+          }
+        }
+      }
+    }
+    // --- Разведчики ---
+    const scoutCount = countUnits('scout');
+    if (barracksCount > 0 && scoutCount < 2) {
+      if (this.priority === 'development' && scoutCount < 2) {
+        const barracks = buildings.filter(b => b.type?.id === 'barracks' || b.type === 'barracks');
+        for (const bar of barracks) {
+          if (units.filter(u => u.type.id === 'scout' && this.isNear(u, bar, 4)).length < 2) {
+            this.tryCreateUnit('scout', bar);
+          }
+        }
+      }
+    }
+  }
+
+  // --- Попытка создать юнита у здания ---
+  tryCreateUnit(unitId, building) {
+    const unitType = UNITS.find(u => u.id === unitId);
+    if (!unitType) return;
+    // Проверяем ресурсы
+    for (const res in unitType.cost) {
+      if (this.getResource(res) < unitType.cost[res]) return;
+    }
+    const spot = this.findFreeSpotNearBuilding(building, 2);
+    if (!spot) return;
+    // Списываем ресурсы
+    for (const res in unitType.cost) {
+      this.spendResource(res, unitType.cost[res]);
+    }
+    this.createUnit(unitType, spot.x * 32 + 16, spot.y * 32 + 16);
+  }
+
+  // --- Поиск свободной клетки рядом с зданием ---
+  findFreeSpotNearBuilding(building, radius = 2) {
+    const map = this.scene.tileData;
+    const size = building.size || building.type?.size || 2;
+    const bx = building.x, by = building.y;
+    // Собираем занятые клетки (юниты, здания, ресурсы)
+    const obstacles = new Set();
+    for (const b of this.getAllBuildings()) {
+      for (let dx = 0; dx < b.size; dx++) for (let dy = 0; dy < b.size; dy++) {
+        obstacles.add(`${b.x + dx},${b.y + dy}`);
+      }
+    }
+    for (const u of this.getAllUnits()) {
+      const tx = Math.floor(u.x / 32), ty = Math.floor(u.y / 32);
+      obstacles.add(`${tx},${ty}`);
+    }
+    if (this.scene.resourceObjects) {
+      for (const r of this.scene.resourceObjects) {
+        obstacles.add(`${r.x},${r.y}`);
+      }
+    }
+    // Перебираем клетки по кругу вокруг здания
+    for (let r = 1; r <= radius; r++) {
+      for (let dx = -r; dx <= size + r - 1; dx++) {
+        for (let dy = -r; dy <= size + r - 1; dy++) {
+          // Только по периметру
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
+          const x = bx + dx, y = by + dy;
+          if (x < 0 || y < 0 || x >= map[0].length || y >= map.length) continue;
+          const t = map[y][x];
+          if (!(t === 0 || t === 3)) continue;
+          if (obstacles.has(`${x},${y}`)) continue;
+          return { x, y };
+        }
+      }
+    }
+    return null;
+  }
+
+  // --- Проверка близости юнита к зданию ---
+  isNear(unit, building, dist) {
+    const tx = Math.floor(unit.x / 32), ty = Math.floor(unit.y / 32);
+    const bx = building.x, by = building.y, sz = building.size || building.type?.size || 2;
+    return tx >= bx - dist && tx < bx + sz + dist && ty >= by - dist && ty < by + sz + dist;
+  }
+
+  // --- Визуализация статуса стратега над базой ---
+  updateStatusLabel() {
+    // Находим первую базу ИИ (enemyBase)
+    const base = this.scene.enemyBases && this.scene.enemyBases[0];
+    if (!base) return;
+    const px = base.rect ? base.rect.x : (base.x * 32 + 32);
+    const py = base.rect ? base.rect.y - 32 : (base.y * 32 - 18);
+    if (!this.statusLabel) {
+      this.statusLabel = this.scene.add.text(px, py, '', { fontSize: '16px', color: '#ff0', fontFamily: 'sans-serif', backgroundColor: 'rgba(0,0,0,0.5)' }).setOrigin(0.5).setDepth(200);
+    }
+    this.statusLabel.x = px;
+    this.statusLabel.y = py;
+    // --- Детализированный статус ---
+    let lines = [];
+    lines.push(`Стратег: ${this.priority === 'defense' ? 'Оборона' : 'Развитие'}`);
+    lines.push(this.status);
+    lines.push(this.playerContact ? 'Контакт с игроком: да' : 'Контакт с игроком: нет');
+    lines.push(`Видимых ресурсов: ${this.memory.resources.size}`);
+    lines.push(`Видимых врагов: ${this.memory.enemyUnits.size}`);
+    const workers = this.getAllUnits().filter(u => u.type.id === 'worker' && u.isAlive());
+    const wGather = workers.filter(w => w.state === 'gather').length;
+    lines.push(`Рабочие: ${workers.length} (добывают: ${wGather})`);
+    const scouts = this.getAllUnits().filter(u => u.type.id === 'scout' && u.isAlive());
+    const sRecon = scouts.filter(s => s.state === 'scouting').length;
+    lines.push(`Разведчики: ${scouts.length} (разведка: ${sRecon})`);
+    const soldiers = this.getAllUnits().filter(u => u.type.id === 'soldier' && u.isAlive());
+    const tanks = this.getAllUnits().filter(u => u.type.id === 'tank' && u.isAlive());
+    const patrols = [...soldiers, ...tanks].filter(u => u.state === 'patrol').length;
+    const attacks = [...soldiers, ...tanks].filter(u => u.state === 'attack').length;
+    lines.push(`Солдаты: ${soldiers.length}, Танки: ${tanks.length}`);
+    lines.push(`Патруль: ${patrols}, Атака: ${attacks}`);
+    this.statusLabel.setText(lines.join('\n'));
+    this.statusLabel.setVisible(true);
+  }
+
+  // --- Поиск свободного места для здания ---
+  findFreeBuildSpot(buildingType) {
+    const map = this.scene.tileData;
+    const size = buildingType.size;
+    // Вокруг своей базы (enemyBase)
+    const base = this.scene.base || (this.scene.enemyBases && this.scene.enemyBases[0]);
+    if (!base) return null;
+    const cx = base.x, cy = base.y;
+    // Собираем занятые клетки (здания, очередь, ресурсы, юниты)
+    const obstacles = new Set();
+    // Построенные здания
+    for (const b of this.getAllBuildings()) {
+      for (let dx = 0; dx < b.size; dx++) for (let dy = 0; dy < b.size; dy++) {
+        obstacles.add(`${b.x + dx},${b.y + dy}`);
+      }
+    }
+    // Здания в очереди
+    if (this.buildings.buildQueue) {
+      for (const b of this.buildings.buildQueue) {
+        const t = BUILDINGS.find(t => t.id === b.type || t.id === b.type?.id);
+        const sz = t ? t.size : b.size || 2;
+        for (let dx = 0; dx < sz; dx++) for (let dy = 0; dy < sz; dy++) {
+          obstacles.add(`${b.x + dx},${b.y + dy}`);
+        }
+      }
+    }
+    // Ресурсы
+    if (this.scene.resourceObjects) {
+      for (const r of this.scene.resourceObjects) {
+        obstacles.add(`${r.x},${r.y}`);
+      }
+    }
+    // Юниты ИИ
+    for (const u of this.getAllUnits()) {
+      const tx = Math.floor(u.x / 32), ty = Math.floor(u.y / 32);
+      obstacles.add(`${tx},${ty}`);
+    }
+    // Перебираем клетки вокруг базы (спиралью)
+    const radius = 12;
+    for (let r = 0; r < radius; r++) {
+      for (let dx = -r; dx <= r; dx++) {
+        for (let dy = -r; dy <= r; dy++) {
+          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // только по периметру
+          const x = cx + dx, y = cy + dy;
+          // Проверка границ
+          if (x < 0 || y < 0 || x + size > map[0].length || y + size > map.length) continue;
+          // Проверка тайлов (только трава или песок)
+          let ok = true;
+          for (let sx = 0; sx < size; sx++) for (let sy = 0; sy < size; sy++) {
+            const t = map[y + sy][x + sx];
+            if (!(t === 0 || t === 3)) ok = false;
+            if (obstacles.has(`${x + sx},${y + sy}`)) ok = false;
+          }
+          if (ok) return { x, y };
+        }
+      }
+    }
+    return null;
+  }
+
+  // --- Логика принятия решения о строительстве ---
+  makeBuildDecision() {
+    // Получаем список построек и очереди
+    const buildings = this.getAllBuildings();
+    const queue = this.buildings.buildQueue || [];
+    // Считаем по id
+    const count = id => buildings.filter(b => b.type?.id === id || b.type === id).length + queue.filter(b => b.type === id || b.type?.id === id).length;
+    // 1. Штаб
+    if (count('hq') === 0) {
+      const hqType = BUILDINGS.find(b => b.id === 'hq');
+      if (this.canAfford(hqType)) {
+        const spot = this.findFreeBuildSpot(hqType);
+        if (spot) this.build('hq', spot.x, spot.y);
+      }
+      return;
+    }
+    // 2. Склад (если много ресурсов и мало складов)
+    if (count('warehouse') < 1 && this.getResource('дерево') > 300) {
+      const whType = BUILDINGS.find(b => b.id === 'warehouse');
+      if (this.canAfford(whType)) {
+        const spot = this.findFreeBuildSpot(whType);
+        if (spot) this.build('warehouse', spot.x, spot.y);
+      }
+    }
+    // 3. Казармы (если нет или мало)
+    if (count('barracks') < 1) {
+      const barrType = BUILDINGS.find(b => b.id === 'barracks');
+      if (this.canAfford(barrType)) {
+        const spot = this.findFreeBuildSpot(barrType);
+        if (spot) this.build('barracks', spot.x, spot.y);
+      }
+    }
+    if (count('factory') < 1 && count('barracks') > 0 && this.getResource('металл') > 60) {
+      const facType = BUILDINGS.find(b => b.id === 'factory');
+      if (this.canAfford(facType)) {
+        const spot = this.findFreeBuildSpot(facType);
+        if (spot) this.build('factory', spot.x, spot.y);
+      }
+    }
+    // 5. Башня (если мало защитных построек)
+    if (count('tower') < 2 && count('hq') > 0) {
+      const towType = BUILDINGS.find(b => b.id === 'tower');
+      if (this.canAfford(towType)) {
+        const spot = this.findFreeBuildSpot(towType);
+        if (spot) this.build('tower', spot.x, spot.y);
+      }
+    }
+  }
+
+  canAfford(buildingType) {
+    if (!buildingType) return false;
+    const cost = buildingType.cost;
+    for (const res in cost) {
+      if (this.getResource(res) < cost[res]) return false;
+    }
+    return true;
+  }
+
+  // Пример: создать здание
+  build(type, x, y) {
+    const buildingType = typeof type === 'string' ? BUILDINGS.find(b => b.id === type) : type;
+    if (!buildingType) return;
+    for (const res in buildingType.cost) {
+      if (!this.spendResource(res, buildingType.cost[res])) return;
+    }
+    this.buildings.queueBuilding(buildingType, x, y);
+  }
+
+  // Пример: создать юнита
+  createUnit(type, x, y) {
+    return this.units.createUnit(type, x, y);
+  }
+
+  getAllUnits() {
+    return this.units.getAllUnits();
+  }
+  getAllBuildings() {
+    return this.buildings.getAllBuildings();
+  }
+
+  // --- Память о видимых объектах ---
+  updateMemory() {
+    // Видимость по всем своим юнитам
+    const units = this.getAllUnits();
+    const vision = [];
+    for (const u of units) {
+      vision.push({ x: u.x, y: u.y, r: u.type.vision });
+    }
+    // --- Ресурсы ---
+    if (this.scene.resourceObjects) {
+      for (const res of this.scene.resourceObjects) {
+        let visible = false;
+        for (const v of vision) {
+          if (Phaser.Math.Distance.Between(res.x * 32 + 16, res.y * 32 + 16, v.x, v.y) < v.r) visible = true;
+        }
+        const key = `${res.x},${res.y}`;
+        if (visible) this.memory.resources.set(key, { ...res, lastSeen: Date.now() });
+        else if (this.memory.resources.has(key) && Date.now() - this.memory.resources.get(key).lastSeen > 10000) this.memory.resources.delete(key);
+      }
+    }
+    // --- Вражеские базы и юниты ---
+    if (this.scene.playerBases) {
+      for (const base of this.scene.playerBases) {
+        let visible = false;
+        for (const v of vision) {
+          if (Phaser.Math.Distance.Between(base.rect.x, base.rect.y, v.x, v.y) < v.r) visible = true;
+        }
+        const key = `${base.x},${base.y}`;
+        if (visible) this.memory.enemyBases.set(key, { ...base, lastSeen: Date.now() });
+        else if (this.memory.enemyBases.has(key) && Date.now() - this.memory.enemyBases.get(key).lastSeen > 10000) this.memory.enemyBases.delete(key);
+        if (visible) this.playerContact = true;
+      }
+    }
+    if (this.scene.playerUnitsController && this.scene.playerUnitsController.units) {
+      for (const u of this.scene.playerUnitsController.units) {
+        let visible = false;
+        for (const v of vision) {
+          if (Phaser.Math.Distance.Between(u.x, u.y, v.x, v.y) < v.r) visible = true;
+        }
+        const key = `${Math.floor(u.x)},${Math.floor(u.y)}`;
+        if (visible) this.memory.enemyUnits.set(key, { ...u, lastSeen: Date.now() });
+        else if (this.memory.enemyUnits.has(key) && Date.now() - this.memory.enemyUnits.get(key).lastSeen > 10000) this.memory.enemyUnits.delete(key);
+        if (visible) this.playerContact = true;
+      }
+    }
+  }
+
+  // --- Назначение задач рабочим ---
+  assignWorkerTasks() {
+    const workers = this.getAllUnits().filter(u => u.type.id === 'worker' && u.isAlive());
+    if (!workers.length) return;
+    // Определяем приоритет ресурсов (по необходимости строительства/юнитов)
+    const needed = this.getNeededResources();
+    // Для каждого рабочего ищем ближайший нужный ресурс
+    for (const worker of workers) {
+      // Если уже есть задача и ресурс ещё есть — не переназначаем
+      if (worker.state === 'gather' && worker.stateData.resourceObj && worker.stateData.resourceObj.amount > 0) continue;
+      let best = null, bestDist = Infinity;
+      for (const [key, res] of this.memory.resources.entries()) {
+        if (!needed[res.type]) continue;
+        if (res.amount <= 0) continue;
+        const dist = Phaser.Math.Distance.Between(worker.x, worker.y, res.x * 32 + 16, res.y * 32 + 16);
+        if (dist < bestDist) { best = res; bestDist = dist; }
+      }
+      if (best) {
+        worker.setState('gather', { resourceObj: best });
+      } else {
+        worker.setState('idle');
+      }
+    }
+  }
+
+  // --- Определение нужных ресурсов ---
+  getNeededResources() {
+    // Считаем, что нужно для строительства и юнитов в очереди
+    const needed = { золото: false, дерево: false, камень: false, металл: false };
+    // Если мало какого-то ресурса — он нужен
+    for (const res in needed) {
+      if (this.getResource(res) < 60) needed[res] = true;
+    }
+    for (const b of this.buildings.buildQueue || []) {
+      for (const res in b.type.cost) needed[res] = true;
+    }
+    // Можно добавить анализ планов
+    return needed;
+  }
+
+  // --- Назначение задач разведчикам ---
+  assignScoutTasks() {
+    const scouts = this.getAllUnits().filter(u => u.type.id === 'scout' && u.isAlive());
+    if (!scouts.length) return;
+    for (const scout of scouts) {
+      // До контакта с игроком — разведка только вокруг базы
+      if (!this.playerContact) {
+        const base = this.scene.enemyBases && this.scene.enemyBases[0];
+        if (base) {
+          const angle = Math.random() * Math.PI * 2;
+          const r = 200 + Math.random() * 100;
+          const tx = base.x * 32 + 16 + Math.cos(angle) * r;
+          const ty = base.y * 32 + 16 + Math.sin(angle) * r;
+          scout.setState('scouting', { target: { x: tx, y: ty } });
+        }
+      } else {
+        // После контакта — исследование случайных точек на карте
+        const map = this.scene.tileData;
+        const tx = Math.floor(Math.random() * map[0].length) * 32 + 16;
+        const ty = Math.floor(Math.random() * map.length) * 32 + 16;
+        scout.setState('scouting', { target: { x: tx, y: ty } });
+      }
+    }
+  }
+
+  // --- Назначение задач боевым юнитам ---
+  assignCombatTasks() {
+    const soldiers = this.getAllUnits().filter(u => u.type.id === 'soldier' && u.isAlive());
+    const tanks = this.getAllUnits().filter(u => u.type.id === 'tank' && u.isAlive());
+    // --- Патруль/защита рабочих и базы ---
+    const patrolPoints = this.getPatrolPoints();
+    let i = 0;
+    for (const unit of [...soldiers, ...tanks]) {
+      // Если есть угроза — защита/атака
+      if (this.priority === 'defense' && this.memory.enemyUnits.size > 0) {
+        // Ищем ближайшего врага
+        let best = null, bestDist = Infinity;
+        for (const [_, enemy] of this.memory.enemyUnits.entries()) {
+          const dist = Phaser.Math.Distance.Between(unit.x, unit.y, enemy.x, enemy.y);
+          if (dist < bestDist) { best = enemy; bestDist = dist; }
+        }
+        if (best) {
+          unit.setState('attack', { target: best });
+          continue;
+        }
+      }
+      // Если нет угрозы — патрулируем точки интереса
+      const pt = patrolPoints[i % patrolPoints.length];
+      unit.setState('patrol', { point: pt });
+      i++;
+    }
+  }
+
+  // --- Точки патруля ---
+  getPatrolPoints() {
+    // Вокруг базы и вокруг рабочих
+    const points = [];
+    const hqs = this.getAllBuildings().filter(b => b.type?.id === 'hq' || b.type === 'hq');
+    for (const hq of hqs) {
+      const cx = (hq.x + (hq.size || hq.type?.size || 2) / 2) * 32;
+      const cy = (hq.y + (hq.size || hq.type?.size || 2) / 2) * 32;
+      points.push({ x: cx + 80, y: cy });
+      points.push({ x: cx - 80, y: cy });
+      points.push({ x: cx, y: cy + 80 });
+      points.push({ x: cx, y: cy - 80 });
+    }
+    // Вокруг рабочих
+    const workers = this.getAllUnits().filter(u => u.type.id === 'worker' && u.isAlive());
+    for (const w of workers) {
+      points.push({ x: w.x + 40, y: w.y });
+      points.push({ x: w.x - 40, y: w.y });
+    }
+    return points.length ? points : [{ x: 500, y: 500 }];
+  }
+
+  getResource(name) {
+    return this.resources[name] || 0;
+  }
+  addResource(name, value) {
+    if (this.resources.hasOwnProperty(name)) {
+      this.resources[name] += value;
+    }
+  }
+  spendResource(name, value) {
+    if (this.resources.hasOwnProperty(name) && this.resources[name] >= value) {
+      this.resources[name] -= value;
+      return true;
+    }
+    return false;
+  }
+  getAllResources() {
+    return { ...this.resources };
+  }
+}
