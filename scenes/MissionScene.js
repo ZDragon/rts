@@ -51,6 +51,39 @@ export default class MissionScene extends Phaser.Scene {
       this.scene.stop('MissionScene');
       this.scene.start('MainMenuScene'); 
     });
+    // --- Кнопка отображения маршрутов ---
+    this.routeLines = [];
+    this.showRoutesBtn = this.add.text(1100, 24, 'Показать маршруты', {
+      fontSize: '18px', color: '#fff', backgroundColor: '#1976d2', padding: { left: 14, right: 14, top: 6, bottom: 6 }, fontFamily: 'sans-serif', depth: 101
+    }).setDepth(101).setOrigin(0, 0.5).setInteractive({ useHandCursor: true }).setScrollFactor(0);
+    this.showRoutesBtn.on('pointerdown', () => {
+      // Удаляем старые линии
+      this.routeLines.forEach(l => l.destroy());
+      this.routeLines = [];
+      // --- Маршруты игрока ---
+      for (const u of this.units) {
+        if (u.path && u.path.length > 0) {
+          for (let i = 0; i < u.path.length - 1; i++) {
+            const a = u.path[i], b = u.path[i + 1];
+            const line = this.add.line(0, 0, a.x * 32 + 16, a.y * 32 + 16, b.x * 32 + 16, b.y * 32 + 16, 0x00e6e6).setLineWidth(3).setDepth(500);
+            this.routeLines.push(line);
+          }
+        }
+      }
+      // --- Маршруты ИИ ---
+      if (this.aiEnemies) {
+        for (const ai of this.aiEnemies) {
+          const paths = ai.getAllUnitPaths ? ai.getAllUnitPaths() : [];
+          for (const path of paths) {
+            for (let i = 0; i < path.length - 1; i++) {
+              const a = path[i], b = path[i + 1];
+              const line = this.add.line(0, 0, a.x, a.y, b.x, b.y, 0xff4444).setLineWidth(3).setDepth(500);
+              this.routeLines.push(line);
+            }
+          }
+        }
+      }
+    });
 
     // Левая панель
     this.add.rectangle(80, 360, 160, 720, 0x222222).setDepth(100).setScrollFactor(0);

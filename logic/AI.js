@@ -2,6 +2,7 @@
 // Модуль логики ИИ противника для RTS
 import { BUILDINGS } from './Buildings.js';
 import { UNITS } from './Units.js';
+import PathfindingController from './PathfindingController.js';
 
 export default class AIEnemy {
   constructor(scene, base) {
@@ -15,6 +16,13 @@ export default class AIEnemy {
     this.lastActionTime = 0;
     this.alerted = false; // первый контакт
     this.patrolPoints = [];
+    // --- Память ИИ ---
+    this.knownPlayerBuildings = [];
+    this.knownPlayerUnits = [];
+    this.knownPlayerBuildingsTimestamps = new Map(); // b -> lastSeenTimestamp
+    this.knownPlayerUnitsTimestamps = new Map(); // u -> lastSeenTimestamp
+    this.globalPatrolPoints = [];
+    this.pathfinder = new PathfindingController();
   }
 
   update(dt, time) {
@@ -28,6 +36,7 @@ export default class AIEnemy {
     // Добыча ресурсов рабочими
     this.updateWorkers(dt);
     this.updateCombatUnits(dt);
+    this.updateMemory();
   }
 
   tryBuild() {
@@ -76,7 +85,11 @@ export default class AIEnemy {
       const color = 0xcccccc;
       const sprite = this.scene.add.circle(px, py, 16, color).setDepth(35);
       const label = this.scene.add.text(px, py, workerType.name, { fontSize: '12px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(36);
-      this.units.push({ x: px, y: py, type: workerType, sprite, label });
+      const maxHP = workerType.maxHP || 40;
+      const hp = maxHP;
+      const hpBarBg = this.scene.add.rectangle(px, py - 22, 32, 6, 0x444444).setDepth(37);
+      const hpBar = this.scene.add.rectangle(px, py - 22, 32, 6, 0x00ff00).setDepth(38);
+      this.units.push({ x: px, y: py, type: workerType, sprite, label, maxHP, hp, hpBar, hpBarBg });
     }
     // Строим боевых юнитов
     for (const combatId of combatTypes) {
@@ -89,9 +102,29 @@ export default class AIEnemy {
         const color = combatType.id === 'soldier' ? 0xff4444 : 0x8888ff;
         const sprite = this.scene.add.circle(px, py, 16, color).setDepth(35);
         const label = this.scene.add.text(px, py, combatType.name, { fontSize: '12px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(36);
-        this.units.push({ x: px, y: py, type: combatType, sprite, label });
+        const maxHP = combatType.maxHP || 80;
+        const hp = maxHP;
+        const hpBarBg = this.scene.add.rectangle(px, py - 22, 32, 6, 0x444444).setDepth(37);
+        const hpBar = this.scene.add.rectangle(px, py - 22, 32, 6, 0x00ff00).setDepth(38);
+        this.units.push({ x: px, y: py, type: combatType, sprite, label, maxHP, hp, hpBar, hpBarBg });
         combatCount++;
       }
+    }
+    // --- Разведчики ---
+    const scoutType = UNITS.find(u => u.id === 'scout');
+    const scoutCount = this.units.filter(u => u.type.id === 'scout').length;
+    if (scoutCount < 2 && this.buildings.length > 0 && this.canAfford(scoutType)) {
+      this.resourcesSpend(scoutType.cost);
+      const px = this.base.x * 32 + 64 + Math.random() * 16 - 8;
+      const py = this.base.y * 32 + 64 + Math.random() * 16 - 8;
+      const color = scoutType.color;
+      const sprite = this.scene.add.circle(px, py, 14, color).setDepth(35);
+      const label = this.scene.add.text(px, py, scoutType.name, { fontSize: '12px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(36);
+      const maxHP = scoutType.maxHP || 30;
+      const hp = maxHP;
+      const hpBarBg = this.scene.add.rectangle(px, py - 18, 28, 5, 0x444444).setDepth(37);
+      const hpBar = this.scene.add.rectangle(px, py - 18, 28, 5, 0x00ff00).setDepth(38);
+      this.units.push({ x: px, y: py, type: scoutType, sprite, label, maxHP, hp, hpBar, hpBarBg });
     }
   }
 
@@ -147,7 +180,7 @@ export default class AIEnemy {
           case 'to_resource': {
             const dist = Phaser.Math.Distance.Between(unit.x, unit.y, unit.task.resourceObj.circ.x, unit.task.resourceObj.circ.y);
             if (dist > 2) {
-              this.moveUnitTo(unit, unit.task.resourceObj.circ.x, unit.task.resourceObj.circ.y, dt);
+              this.moveUnitByPath(unit, dt);
             } else {
               unit.task.state = 'gathering';
               unit.task.gatherTimer = 0;
@@ -176,7 +209,7 @@ export default class AIEnemy {
           case 'to_base': {
             const dist = Phaser.Math.Distance.Between(unit.x, unit.y, this.base.rect.x, this.base.rect.y);
             if (dist > 2) {
-              this.moveUnitTo(unit, this.base.rect.x, this.base.rect.y, dt);
+              this.moveUnitByPath(unit, dt);
             } else {
               // Пополняем ресурсы ИИ
               this.resources[unit.task.resourceObj.type] = (this.resources[unit.task.resourceObj.type] || 0) + unit.task.carried;
@@ -197,20 +230,41 @@ export default class AIEnemy {
     }
   }
 
-  moveUnitTo(unit, tx, ty, dt) {
-    const dx = tx - unit.x;
-    const dy = ty - unit.y;
-    const dist = Math.sqrt(dx * dx + dy * dy);
-    const speed = 70;
-    if (dist > 1) {
-      const move = Math.min(speed * dt, dist);
-      unit.x += (dx / dist) * move;
-      unit.y += (dy / dist) * move;
-      unit.sprite.x = unit.x;
-      unit.sprite.y = unit.y;
-      unit.label.x = unit.x;
-      unit.label.y = unit.y;
+  moveUnitByPath(unit, dt) {
+    if (unit.path && unit.pathStep < unit.path.length) {
+      const next = unit.path[unit.pathStep];
+      const tx = next.x * 32 + 16;
+      const ty = next.y * 32 + 16;
+      const dx = tx - unit.x, dy = ty - unit.y;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      const speed = unit.type.speed || 70;
+      if (dist > 2) {
+        const move = Math.min(speed * dt, dist);
+        unit.x += (dx / dist) * move;
+        unit.y += (dy / dist) * move;
+        unit.sprite.x = unit.x;
+        unit.sprite.y = unit.y;
+        unit.label.x = unit.x;
+        unit.label.y = unit.y;
+        if (unit.hpBar && unit.hpBarBg) {
+          let offset = -22;
+          if (unit.type.id === 'scout') offset = -18;
+          unit.hpBar.x = unit.x;
+          unit.hpBar.y = unit.y + offset;
+          unit.hpBarBg.x = unit.x;
+          unit.hpBarBg.y = unit.y + offset;
+        }
+        if (unit.statusLabel) {
+          unit.statusLabel.x = unit.x;
+          unit.statusLabel.y = unit.y - 28;
+        }
+      } else {
+        unit.x = tx; unit.y = ty;
+      }
+      unit.pathStep++;
+      return true;
     }
+    return false;
   }
 
   findNearestResource(unit) {
@@ -224,19 +278,77 @@ export default class AIEnemy {
     return found;
   }
 
+  // --- Обновление памяти ИИ ---
+  updateMemory() {
+    // Для каждого боевого юнита: если видит здание/юнита игрока — добавить в память
+    const now = Date.now();
+    for (const unit of this.units) {
+      if (unit.type.id !== 'soldier' && unit.type.id !== 'tank') continue;
+      const vision = unit.type.vision || 100;
+      // Здания игрока
+      for (const b of this.scene.buildingsOnMap) {
+        const cx = b.x * 32 + b.size * 32 / 2;
+        const cy = b.y * 32 + b.size * 32 / 2;
+        if (Phaser.Math.Distance.Between(unit.x, unit.y, cx, cy) < vision) {
+          if (!this.knownPlayerBuildings.includes(b)) this.knownPlayerBuildings.push(b);
+          this.knownPlayerBuildingsTimestamps.set(b, now);
+        }
+      }
+      // Юниты игрока
+      for (const u of this.scene.units) {
+        if (Phaser.Math.Distance.Between(unit.x, unit.y, u.x, u.y) < vision) {
+          if (!this.knownPlayerUnits.includes(u)) this.knownPlayerUnits.push(u);
+          this.knownPlayerUnitsTimestamps.set(u, now);
+        }
+      }
+    }
+    // Удалять уничтоженные объекты из памяти
+    this.knownPlayerBuildings = this.knownPlayerBuildings.filter(b => this.scene.buildingsOnMap.includes(b));
+    this.knownPlayerUnits = this.knownPlayerUnits.filter(u => this.scene.units.includes(u));
+    // Забывание целей: если не виден более 20 секунд — забыть
+    const forgetTime = 20000;
+    this.knownPlayerBuildings = this.knownPlayerBuildings.filter(b => {
+      const t = this.knownPlayerBuildingsTimestamps.get(b) || 0;
+      if (now - t < forgetTime) return true;
+      this.knownPlayerBuildingsTimestamps.delete(b);
+      return false;
+    });
+    this.knownPlayerUnits = this.knownPlayerUnits.filter(u => {
+      const t = this.knownPlayerUnitsTimestamps.get(u) || 0;
+      if (now - t < forgetTime) return true;
+      this.knownPlayerUnitsTimestamps.delete(u);
+      return false;
+    });
+  }
+
   // --- Боевые юниты: патруль и обнаружение ---
   updateCombatUnits(dt) {
-    // Патрульные точки: база + только те залежи, с которых рабочие ИИ реально добывают ресурсы
     const activeResources = new Set();
     for (const unit of this.units) {
       if (unit.type.id === 'worker' && unit.task && unit.task.resourceObj) {
         activeResources.add(unit.task.resourceObj);
       }
     }
-    // Формируем массив патрульных зон: база и активные залежи
-    const patrolZones = [{ x: this.base.rect.x, y: this.base.rect.y, type: 'base' }];
-    for (const res of activeResources) {
-      patrolZones.push({ x: res.circ.x, y: res.circ.y, type: 'resource', res });
+    // --- Патрульные точки ---
+    let patrolZones = [];
+    if (!this.alerted) {
+      // До первого контакта: база и активные залежи
+      patrolZones = [{ x: this.base.rect.x, y: this.base.rect.y, type: 'base' }];
+      for (const res of activeResources) {
+        patrolZones.push({ x: res.circ.x, y: res.circ.y, type: 'resource', res });
+      }
+    } else {
+      // После первого контакта: патрулируем по всей карте (по точкам)
+      if (this.globalPatrolPoints.length === 0) {
+        // Сгенерировать точки по сетке (например, 8x8)
+        const step = 4;
+        for (let y = 2; y < 100; y += step) {
+          for (let x = 2; x < 100; x += step) {
+            this.globalPatrolPoints.push({ x: x * 32, y: y * 32, type: 'global' });
+          }
+        }
+      }
+      patrolZones = this.globalPatrolPoints;
     }
 
     for (const unit of this.units) {
@@ -247,16 +359,26 @@ export default class AIEnemy {
         if (!unit.patrolZone || (unit.patrolZone.type === 'resource' && !activeResources.has(unit.patrolZone.res))) {
           unit.patrolZone = patrolZones[Math.floor(Math.random() * patrolZones.length)];
           unit.patrolAngle = Math.random() * Math.PI * 2;
+          const R = 56;
+          const tx = unit.patrolZone.x + Math.cos(unit.patrolAngle) * R;
+          const ty = unit.patrolZone.y + Math.sin(unit.patrolAngle) * R;
+          this.buildPathForUnit(unit, tx, ty);
         }
-        // Движение по окружности вокруг патрульной зоны
-        const R = 56;
-        unit.patrolAngle += 0.5 * dt; // скорость обхода
-        const tx = unit.patrolZone.x + Math.cos(unit.patrolAngle) * R;
-        const ty = unit.patrolZone.y + Math.sin(unit.patrolAngle) * R;
-        this.moveUnitTo(unit, tx, ty, dt);
+        this.moveUnitByPath(unit, dt);
+      } else {
+        // --- Патрулирование по всей карте после первого контакта ---
+        if (!unit.patrolZone || unit.patrolZone.type !== 'global') {
+          unit.patrolZone = patrolZones[Math.floor(Math.random() * patrolZones.length)];
+          unit.patrolAngle = Math.random() * Math.PI * 2;
+          const R = 56;
+          const tx = unit.patrolZone.x + Math.cos(unit.patrolAngle) * R;
+          const ty = unit.patrolZone.y + Math.sin(unit.patrolAngle) * R;
+          this.buildPathForUnit(unit, tx, ty);
+        }
+        this.moveUnitByPath(unit, dt);
       }
       // --- Обнаружение врага ---
-      const radius = 96;
+      const radius = unit.type.vision || 96;
       for (const playerUnit of this.scene.units) {
         if (Phaser.Math.Distance.Between(unit.x, unit.y, playerUnit.x, playerUnit.y) < radius) {
           this.triggerAlert();
@@ -266,113 +388,190 @@ export default class AIEnemy {
       if (!this.alerted) continue;
       // --- Атака после первого контакта ---
       if (!unit.attackTarget || unit.attackTarget._destroyed) {
-        // Выбор новой цели: сначала здания игрока, потом юниты
+        // --- Приоритет: сначала ближайший вражеский юнит в радиусе 96, потом здания ---
         let target = null;
-        // 1. Здания игрока
-        if (this.scene.buildingsOnMap && this.scene.buildingsOnMap.length > 0) {
-          // Ищем ближайшее здание
-          let minDist = Infinity;
-          for (const b of this.scene.buildingsOnMap) {
+        // 1. Ближайший юнит игрока в радиусе 96 ИЗ ПАМЯТИ
+        let minDist = Infinity;
+        for (const u of this.knownPlayerUnits) {
+          const d = Phaser.Math.Distance.Between(unit.x, unit.y, u.x, u.y);
+          if (d < 96 && d < minDist) { minDist = d; target = u; }
+        }
+        // 2. Если нет юнитов в радиусе — атакуем ближайшее известное здание
+        if (!target && this.knownPlayerBuildings.length > 0) {
+          minDist = Infinity;
+          for (const b of this.knownPlayerBuildings) {
             const cx = b.x * 32 + b.size * 32 / 2;
             const cy = b.y * 32 + b.size * 32 / 2;
             const d = Phaser.Math.Distance.Between(unit.x, unit.y, cx, cy);
             if (d < minDist) { minDist = d; target = b; }
           }
         }
-        // 2. Если нет зданий — атакуем ближайшего юнита игрока
-        if (!target && this.scene.units.length > 0) {
-          let minDist = Infinity;
-          for (const u of this.scene.units) {
+        // 3. Если нет зданий — атакуем любого ближайшего известного юнита игрока (вне радиуса)
+        if (!target && this.knownPlayerUnits.length > 0) {
+          minDist = Infinity;
+          for (const u of this.knownPlayerUnits) {
             const d = Phaser.Math.Distance.Between(unit.x, unit.y, u.x, u.y);
             if (d < minDist) { minDist = d; target = u; }
           }
         }
+        // --- Групповая атака ---
         if (target) {
-          unit.attackTarget = target;
-        } else {
-          unit.attackTarget = null;
-        }
-      }
-      // Движение к цели и атака
-      if (unit.attackTarget) {
-        let tx, ty;
-        if (unit.attackTarget.sprite) {
-          tx = unit.attackTarget.x;
-          ty = unit.attackTarget.y;
-        } else {
-          // Здание: вычисляем центр
-          tx = unit.attackTarget.x * 32 + unit.attackTarget.size * 32 / 2;
-          ty = unit.attackTarget.y * 32 + unit.attackTarget.size * 32 / 2;
-        }
-        const dist = Phaser.Math.Distance.Between(unit.x, unit.y, tx, ty);
-        if (dist > 28) {
-          this.moveUnitTo(unit, tx, ty, dt);
-        } else {
-          // Атака: наносим урон
-          if (!unit.attackCooldown) unit.attackCooldown = 0;
-          unit.attackCooldown -= dt;
-          if (unit.attackCooldown <= 0) {
-            unit.attackCooldown = unit.type.id === 'tank' ? 1.2 : 0.7;
-            // Визуализация атаки — красная линия
-            if (this.scene && this.scene.add) {
-              const line = this.scene.add.line(0, 0, unit.x, unit.y, tx, ty, 0xff2222).setLineWidth(3).setDepth(200);
-              this.scene.time.delayedCall(200, () => { line.destroy(); });
-            }
-            // Урон по цели
-            if (unit.attackTarget.hp !== undefined) {
-              unit.attackTarget.hp -= unit.type.id === 'tank' ? 30 : 15;
-              // Визуально обновить HP-бар
-              if (unit.attackTarget.hpBar) {
-                unit.attackTarget.hpBar.width = 32 * (unit.attackTarget.hp / unit.attackTarget.maxHP);
-                unit.attackTarget.hpBar.x = unit.attackTarget.x - 16 + (unit.attackTarget.hp / unit.attackTarget.maxHP) * 16;
-              }
-              // Уничтожение цели
-              if (unit.attackTarget.hp <= 0) {
-                if (unit.attackTarget.sprite) {
-                  // --- Анимация разрушения юнита ---
-                  const boom = this.scene.add.circle(unit.attackTarget.x, unit.attackTarget.y, 22, 0xffe066).setAlpha(0.7).setDepth(300);
-                  this.scene.tweens.add({
-                    targets: boom,
-                    alpha: 0,
-                    scale: 2,
-                    duration: 350,
-                    onComplete: () => boom.destroy()
-                  });
-                  unit.attackTarget.sprite.destroy();
-                  unit.attackTarget.label.destroy();
-                  if (unit.attackTarget.hpBar) unit.attackTarget.hpBar.destroy();
-                  if (unit.attackTarget.hpBarBg) unit.attackTarget.hpBarBg.destroy();
-                  // Удаляем из массива юнитов игрока
-                  const idx = this.scene.units.indexOf(unit.attackTarget);
-                  if (idx !== -1) this.scene.units.splice(idx, 1);
-                } else {
-                  // --- Анимация разрушения здания ---
-                  const b = unit.attackTarget;
-                  const size = b.type.size * 32;
-                  const boom = this.scene.add.rectangle(b.x * 32 + size / 2, b.y * 32 + size / 2, size, size, 0xffa000).setAlpha(0.6).setDepth(300);
-                  this.scene.tweens.add({
-                    targets: boom,
-                    alpha: 0,
-                    scaleX: 1.7,
-                    scaleY: 1.7,
-                    duration: 450,
-                    onComplete: () => boom.destroy()
-                  });
-                  // Здание: удаляем визуальные объекты и из массива построек
-                  b.group && b.group.destroy && b.group.destroy();
-                  if (b.rect) b.rect.destroy();
-                  if (b.border) b.border.destroy();
-                  if (b.label) b.label.destroy();
-                  if (b.hpBar) b.hpBar.destroy();
-                  if (b.hpBarBg) b.hpBarBg.destroy();
-                  const idx = this.scene.buildingsOnMap.indexOf(b);
-                  if (idx !== -1) this.scene.buildingsOnMap.splice(idx, 1);
-                }
-                unit.attackTarget = null;
-              }
+          let tx, ty;
+          if (target.sprite) {
+            tx = target.x;
+            ty = target.y;
+          } else {
+            tx = target.x * 32 + target.size * 32 / 2;
+            ty = target.y * 32 + target.size * 32 / 2;
+          }
+          // Считаем боевых юнитов ИИ в радиусе 100px от точки сбора (рядом с целью)
+          let aiCount = 0;
+          for (const u of this.units) {
+            if (u.type.id === 'soldier' || u.type.id === 'tank') {
+              if (Phaser.Math.Distance.Between(u.x, u.y, tx, ty) < 100) aiCount++;
             }
           }
+          // Если своих меньше 3 — собираемся в точке сбора, не атакуем
+          if (aiCount < 3) {
+            unit.attackTarget = null;
+            // Двигаемся к точке сбора (рядом с целью, но не вплотную)
+            if (!unit.gatheringForAttack || Phaser.Math.Distance.Between(unit.x, unit.y, tx, ty) > 40) {
+              unit.gatheringForAttack = true;
+              unit.target = { x: tx + Math.random() * 40 - 20, y: ty + Math.random() * 40 - 20 };
+            }
+            return;
+          }
+          // --- Оценка сил перед атакой ---
+          let playerCount = 0;
+          for (const u of this.scene.units) {
+            if (u.type.id === 'soldier' || u.type.id === 'tank') {
+              if (Phaser.Math.Distance.Between(u.x, u.y, tx, ty) < 100) playerCount++;
+            }
+          }
+          // Если своих меньше или равно — не атакуем, патрулируем
+          if (aiCount <= playerCount) {
+            unit.attackTarget = null;
+            if (this.alerted && unit.patrolZone && unit.patrolZone.type === 'global') {
+              unit.patrolZone = this.globalPatrolPoints[Math.floor(Math.random() * this.globalPatrolPoints.length)];
+              unit.patrolAngle = Math.random() * Math.PI * 2;
+            }
+            return;
+          }
+          unit.attackTarget = target;
+          unit.gatheringForAttack = false;
+        } else {
+          unit.attackTarget = null;
+          unit.gatheringForAttack = false;
         }
+      }
+      // --- Реакция на атаку: защита зданий и рабочих ---
+      if (unit.defendTarget && (!unit.defendTarget.hp || unit.defendTarget.hp <= 0)) {
+        unit.defendTarget = null; // цель уничтожена
+      }
+      if (unit.defendTarget) {
+        let tx, ty;
+        if (unit.defendTarget.sprite) {
+          tx = unit.defendTarget.x;
+          ty = unit.defendTarget.y;
+        } else {
+          tx = unit.defendTarget.x * 32 + unit.defendTarget.size * 32 / 2;
+          ty = unit.defendTarget.y * 32 + unit.defendTarget.size * 32 / 2;
+        }
+        // Если рядом есть вражеский юнит — атакуем его
+        let closestEnemy = null, minDist = Infinity;
+        for (const u of this.scene.units) {
+          const d = Phaser.Math.Distance.Between(u.x, u.y, tx, ty);
+          if (d < 80 && d < minDist) { minDist = d; closestEnemy = u; }
+        }
+        if (closestEnemy) {
+          unit.attackTarget = closestEnemy;
+        } else {
+          // Просто держимся рядом с целью защиты
+          unit.attackTarget = null;
+          if (!unit.target || Phaser.Math.Distance.Between(unit.x, unit.y, tx, ty) > 32) {
+            unit.target = { x: tx + Math.random() * 24 - 12, y: ty + Math.random() * 24 - 12 };
+          }
+        }
+        this.moveUnitByPath(unit, dt);
+        continue;
+      }
+      if (unit.target && !unit.attackTarget && !unit.defendTarget) {
+        this.moveUnitByPath(unit, dt);
+      }
+      if (unit.type.id === 'soldier' || unit.type.id === 'tank' || unit.type.id === 'scout') {
+        if (!unit.statusLabel) {
+          unit.statusLabel = this.scene.add.text(unit.x, unit.y - 28, '', { fontSize: '12px', color: '#ffb', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(60);
+        }
+        unit.statusLabel.x = unit.x;
+        unit.statusLabel.y = unit.y - 28;
+        let statusText = '';
+        if (unit.type.id === 'scout') {
+          if (unit.scoutTarget && (!unit.target || (unit.target && unit.target === unit.scoutTarget))) {
+            statusText = 'Разведка';
+          } else if (unit.target && (!unit.scoutTarget || unit.target !== unit.scoutTarget)) {
+            statusText = 'Убегает';
+          } else {
+            statusText = 'Ожидание';
+          }
+        } else if (unit.attackTarget) {
+          statusText = 'Атака';
+        } else if (unit.defendTarget) {
+          statusText = 'Охрана';
+        } else if (unit.target) {
+          statusText = 'Отступление';
+        } else if (unit.patrolZone) {
+          statusText = 'Патруль';
+        } else {
+          statusText = 'Ожидание';
+        }
+        unit.statusLabel.setText(statusText);
+        unit.statusLabel.setVisible(true);
+      }
+    }
+    // --- Поведение разведчиков ---
+    for (const unit of this.units) {
+      if (unit.type.id !== 'scout') continue;
+      // Двигается по точкам разведки (глобальные патрульные точки)
+      if (!this.globalPatrolPoints || this.globalPatrolPoints.length === 0) continue;
+      if (!unit.scoutTarget || Phaser.Math.Distance.Between(unit.x, unit.y, unit.scoutTarget.x, unit.scoutTarget.y) < 16) {
+        unit.scoutTarget = this.globalPatrolPoints[Math.floor(Math.random() * this.globalPatrolPoints.length)];
+      }
+      const dx = unit.scoutTarget.x - unit.x;
+      const dy = unit.scoutTarget.y - unit.y;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      const speed = unit.type.speed || 120;
+      if (dist > 2) {
+        const move = Math.min(speed * dt, dist);
+        unit.x += (dx / dist) * move;
+        unit.y += (dy / dist) * move;
+      }
+      unit.sprite.x = unit.x;
+      unit.sprite.y = unit.y;
+      unit.label.x = unit.x;
+      unit.label.y = unit.y;
+      // --- Обновление полосок HP ---
+      if (unit.hpBar && unit.hpBarBg) {
+        let offset = -18;
+        unit.hpBar.x = unit.x;
+        unit.hpBar.y = unit.y + offset;
+        unit.hpBarBg.x = unit.x;
+        unit.hpBarBg.y = unit.y + offset;
+      }
+      // --- Обновление statusLabel ---
+      if (unit.statusLabel) {
+        unit.statusLabel.x = unit.x;
+        unit.statusLabel.y = unit.y - 28;
+      }
+    }
+    // --- Глобальное обновление полосок HP для всех юнитов ---
+    for (const unit of this.units) {
+      if (unit.hpBar && unit.hpBarBg) {
+        let offset = -22;
+        if (unit.type.id === 'scout') offset = -18;
+        unit.hpBar.x = unit.x;
+        unit.hpBar.y = unit.y + offset;
+        unit.hpBarBg.x = unit.x;
+        unit.hpBarBg.y = unit.y + offset;
       }
     }
   }
@@ -382,5 +581,86 @@ export default class AIEnemy {
       this.alerted = true;
       // Можно добавить визуальное сообщение или эффект
     }
+  }
+
+  /**
+   * Метод для реакции юнита ИИ на получение урона
+   * @param {object} unit - юнит ИИ
+   * @param {object} attacker - атакующий юнит (игрока)
+   */
+  onUnitDamaged(unit, attacker) {
+    // Разведчик: всегда убегает в случайную точку, подальше от атакующего
+    if (unit.type.id === 'scout') {
+      const angle = Math.atan2(unit.y - attacker.y, unit.x - attacker.x) + (Math.random() - 0.5);
+      const dist = 200 + Math.random() * 100;
+      const tx = unit.x + Math.cos(angle) * dist;
+      const ty = unit.y + Math.sin(angle) * dist;
+      unit.target = { x: Phaser.Math.Clamp(tx, 0, 3200), y: Phaser.Math.Clamp(ty, 0, 3200) };
+      unit.scoutTarget = unit.target;
+      return;
+    }
+    // Рабочий: убегает к базе
+    if (unit.type.id === 'worker') {
+      unit.target = { x: this.base.rect.x, y: this.base.rect.y };
+      return;
+    }
+    // Боевой юнит: всегда даёт отпор и зовёт подмогу
+    if ((unit.type.id === 'soldier' || unit.type.id === 'tank')) {
+      unit.attackTarget = attacker;
+      unit.target = null;
+      unit.defendTarget = null;
+      // Призыв подмоги: все союзные боевые юниты в радиусе 100 тоже атакуют attacker
+      for (const ally of this.units) {
+        if ((ally.type.id === 'soldier' || ally.type.id === 'tank') && ally !== unit) {
+          if (Phaser.Math.Distance.Between(ally.x, ally.y, unit.x, unit.y) < 100) {
+            ally.attackTarget = attacker;
+            ally.target = null;
+            ally.defendTarget = null;
+          }
+        }
+      }
+    }
+  }
+
+  // Вспомогательная функция для построения пути
+  buildPathForUnit(unit, tx, ty) {
+    const map = this.scene.tileData;
+    // Собираем препятствия (юниты, здания, ресурсы)
+    const obstacles = new Set();
+    for (const u of this.units) {
+      if (u !== unit) {
+        const ux = Math.floor(u.x / 32), uy = Math.floor(u.y / 32);
+        obstacles.add(`${ux},${uy}`);
+      }
+    }
+    for (const b of this.buildings) {
+      for (let dx = 0; dx < b.size; dx++) for (let dy = 0; dy < b.size; dy++) {
+        obstacles.add(`${b.x + dx},${b.y + dy}`);
+      }
+    }
+    for (const res of this.scene.resourceObjects) {
+      obstacles.add(`${res.x},${res.y}`);
+    }
+    let allowedTiles = new Set([0,3]);
+    if (unit.type.id === 'tank') allowedTiles = new Set([0,3,2]);
+    const from = { x: Math.floor(unit.x / 32), y: Math.floor(unit.y / 32) };
+    const to = { x: Math.floor(tx / 32), y: Math.floor(ty / 32) };
+    const path = this.pathfinder.findPath(unit, from, to, map, obstacles, allowedTiles);
+    if (path) {
+      unit.path = path;
+      unit.pathStep = 0;
+      return true;
+    } else {
+      unit.path = null;
+      unit.pathStep = 0;
+      return false;
+    }
+  }
+
+  // Вспомогательная функция для визуализации всех маршрутов
+  getAllUnitPaths() {
+    return this.units
+      .filter(u => u.path && u.path.length > 0)
+      .map(u => u.path.map(p => ({ x: p.x * 32 + 16, y: p.y * 32 + 16 })));
   }
 } 
