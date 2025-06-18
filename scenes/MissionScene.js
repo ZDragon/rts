@@ -716,4 +716,18 @@ export default class MissionScene extends Phaser.Scene {
     this.selectedUnits = [];
     this.infoText.setText('Информация о выбранном объекте');
   }
+
+  getAllUnits() {
+    const units = [];
+    for (const u of this.units) {
+      units.push(u);
+    }
+    for (const u of this.aiEnemies) {
+      units.push(...u.strategist.getAllUnits());
+    }
+    return units;
+  }
+  getAllBuildings() {
+    return this.buildingsOnMap;
+  }
 } 

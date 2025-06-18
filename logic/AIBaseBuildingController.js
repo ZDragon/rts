@@ -1,6 +1,7 @@
 export default class AIBaseBuildingController {
-  constructor(scene) {
+  constructor(scene, strategist) {
     this.scene = scene;
+    this.strategist = strategist;
     this.buildings = [];
     this.buildQueue = [];
   }

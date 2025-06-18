@@ -1,10 +1,11 @@
 import PathfindingController from './PathfindingController.js';
 
 export default class BotUnit {
-  constructor({ x, y, type, scene }) {
+  constructor({ x, y, type, scene, owner }) {
     this.x = x;
     this.y = y;
     this.type = type; // объект типа юнита (id, name, speed, maxHP и т.д.)
+    this.owner = owner;
     this.scene = scene;
     this.hp = type.maxHP;
     this.maxHP = type.maxHP;
@@ -265,13 +266,14 @@ export class BotWorker extends BotUnit {
           break;
         }
         if (this.gatherState === 'to_resource') {
+          const freeTile = this.findFreeAdjacentTile(this.gatherTarget.x, this.gatherTarget.y);
           // Движение к ресурсу
-          const tx = this.gatherTarget.x * 32 + 16;
-          const ty = this.gatherTarget.y * 32 + 16;
+          const tx = freeTile.x * 32 + 16;
+          const ty = freeTile.y * 32 + 16;
           const dist = Math.hypot(this.x - tx, this.y - ty);
           if (dist > 24) {
             if (!this.path || this.pathStep >= this.path.length) {
-              this.moveToTile(this.gatherTarget.x, this.gatherTarget.y, new Set([0,3]));
+              this.moveToTile(freeTile.x, freeTile.y, new Set([0,3]));
             } else {
               this.moveByPath(dt);
             }
@@ -286,16 +288,8 @@ export class BotWorker extends BotUnit {
             this.gatherTarget.amount--;
             this.gatherCarried++;
             if (this.gatherCarried >= 10 || this.gatherTarget.amount <= 0) {
-              // Найти ближайшую базу ИИ
-              let minDist = Infinity, base = null;
-              for (const b of this.scene.strategist.getAllBuildings()) {
-                if (b.type?.id === 'hq' || b.type === 'hq') {
-                  const bx = (b.x + (b.size || b.type?.size || 2) / 2) * 32;
-                  const by = (b.y + (b.size || b.type?.size || 2) / 2) * 32;
-                  const d = Math.hypot(this.x - bx, this.y - by);
-                  if (d < minDist) { minDist = d; base = b; }
-                }
-              }
+              // Найти свою базу ИИ
+              const base = this.owner.ai.base;
               if (base) {
                 this.gatherBase = base;
                 this.gatherState = 'to_base';
@@ -318,8 +312,8 @@ export class BotWorker extends BotUnit {
             }
           } else {
             // Пополняем ресурсы ИИ через стратегa
-            if (this.scene.strategist && typeof this.scene.strategist.addResource === 'function') {
-              this.scene.strategist.addResource(this.gatherTarget.type, this.gatherCarried);
+            if (this.owner && typeof this.owner.addResource === 'function') {
+              this.owner.addResource(this.gatherTarget.type, this.gatherCarried);
             }
             this.gatherCarried = 0;
             if (this.gatherTarget.amount > 0) {
@@ -352,7 +346,7 @@ export class BotWorker extends BotUnit {
       if (t === 0 || t === 3) {
         // Проверка, нет ли других юнитов на клетке
         let blocked = false;
-        for (const u of this.scene.strategist.getAllUnits()) {
+        for (const u of this.scene.getAllUnits()) {
           if (u !== this && Math.floor(u.x / 32) === nx && Math.floor(u.y / 32) === ny) {
             blocked = true;
             break;

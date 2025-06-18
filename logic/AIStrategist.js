@@ -4,10 +4,11 @@ import { BUILDINGS } from './Buildings.js';
 import { UNITS } from './Units.js';
 
 export default class AIStrategist {
-  constructor(scene, startResources = { золото: 500, дерево: 300, камень: 200, металл: 100 }) {
+  constructor(scene, ai, startResources = { золото: 500, дерево: 300, камень: 200, металл: 100 }) {
     this.scene = scene;
-    this.buildings = new AIBaseBuildingController(scene);
-    this.units = new AIUnitsController(scene);
+    this.ai = ai;
+    this.buildings = new AIBaseBuildingController(scene, this);
+    this.units = new AIUnitsController(scene, this);
     // Здесь можно хранить память, цели, флаги, таймеры и т.д.
     this.lastBuildCheck = 0;
     this.status = 'Анализ...';

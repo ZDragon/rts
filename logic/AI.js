@@ -9,7 +9,7 @@ export default class AIEnemy {
     this.base = base;   // {x, y, rect, label}
     this.pathfinder = new PathfindingController();
     // Передаём стартовые ресурсы в стратегa
-    this.strategist = new AIStrategist(scene, { золото: 500, дерево: 300, камень: 200, металл: 100 });
+    this.strategist = new AIStrategist(scene, this, { золото: 500, дерево: 300, камень: 200, металл: 100 });
   }
 
   update(dt, time) {

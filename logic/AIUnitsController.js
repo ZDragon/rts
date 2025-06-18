@@ -1,8 +1,9 @@
 import BotUnit, { BotScout, BotWorker, BotSoldier, BotTank } from './BotUnit.js';
 
 export default class AIUnitsController {
-  constructor(scene) {
+  constructor(scene, strategist) {
     this.scene = scene;
+    this.strategist = strategist;
     this.units = [];
   }
 
@@ -19,19 +20,19 @@ export default class AIUnitsController {
     let unit;
     switch (type.id) {
       case 'scout':
-        unit = new BotScout({ x, y, type, scene: this.scene });
+        unit = new BotScout({ x, y, type, scene: this.scene, owner: this.strategist });
         break;
       case 'worker':
-        unit = new BotWorker({ x, y, type, scene: this.scene });
+        unit = new BotWorker({ x, y, type, scene: this.scene, owner: this.strategist });
         break;
       case 'soldier':
-        unit = new BotSoldier({ x, y, type, scene: this.scene });
+        unit = new BotSoldier({ x, y, type, scene: this.scene, owner: this.strategist });
         break;
       case 'tank':
-        unit = new BotTank({ x, y, type, scene: this.scene });
+        unit = new BotTank({ x, y, type, scene: this.scene, owner: this.strategist });
         break;
       default:
-        unit = new BotUnit({ x, y, type, scene: this.scene });
+        unit = new BotUnit({ x, y, type, scene: this.scene, owner: this.strategist });
     }
     this.addUnit(unit);
     return unit;
