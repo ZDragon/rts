@@ -285,8 +285,8 @@ export class BotWorker extends BotUnit {
           this.gatherTimer += dt;
           if (this.gatherTimer > 1.5) {
             this.gatherTimer = 0;
-            this.gatherTarget.amount--;
-            this.gatherCarried++;
+            const gathered = this.gatherTarget.gather(1);
+            this.gatherCarried += gathered;
             if (this.gatherCarried >= 10 || this.gatherTarget.amount <= 0) {
               // Найти свою базу ИИ
               const base = this.owner.ai.base;

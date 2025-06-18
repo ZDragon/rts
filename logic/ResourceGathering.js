@@ -2,6 +2,7 @@
 // Управляет логикой добычи ресурсов рабочими
 
 import resourceManager from './ResourceManager.js';
+import ResourceDeposit from './ResourceDeposit.js';
 
 export default class ResourceGathering {
   constructor(scene) {
@@ -100,4 +101,4 @@ export default class ResourceGathering {
       }
     }
   }
-} 
+}

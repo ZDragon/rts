@@ -6,6 +6,7 @@ import { MAPS } from '../logic/Maps.js';
 import ResourceGathering from '../logic/ResourceGathering.js';
 import AIEnemy from '../logic/AI.js';
 import PlayerUnitsController from '../logic/PlayerUnits.js';
+import ResourceDeposit from '../logic/ResourceDeposit.js';
 
 const TILE_SIZE = 32;
 const MAP_SIZE = 100;
@@ -142,21 +143,19 @@ export default class MissionScene extends Phaser.Scene {
     // --- Инициализация ИИ ---
     this.aiEnemies = this.enemyBases.map(base => new AIEnemy(this, base));
     // --- Размещение ресурсов ---
-    this.resourceObjects = [];
+    this.resourceDeposits = [];
     for (const res of map.resources) {
-      const px = res.x * TILE_SIZE + TILE_SIZE;
-      const py = res.y * TILE_SIZE + TILE_SIZE;
-      let color = 0xffd700;
-      if (res.type === 'дерево') color = 0x388e3c;
-      if (res.type === 'камень') color = 0x888888;
-      if (res.type === 'металл') color = 0x1976d2;
-      const circ = this.add.circle(px, py, TILE_SIZE * 0.7, color).setDepth(40);
-      const label = this.add.text(px, py, res.type, { fontSize: '12px', color: '#222', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(41);
-      const amountLabel = this.add.text(px, py - 18, res.amount.toString(), { fontSize: '12px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(42);
-      this.resourceObjects.push({type: res.type, x: res.x, y: res.y, amount: res.amount, circ, label, amountLabel});
+      const deposit = new ResourceDeposit({
+        scene: this,
+        x: res.x,
+        y: res.y,
+        type: res.type,
+        amount: res.amount
+      });
+      this.resourceDeposits.push(deposit);
     }
     this.updateResourceLabels = () => {
-      for (const res of this.resourceObjects) {
+      for (const res of this.resourceDeposits) {
         res.amountLabel.setText(res.amount.toString());
       }
     };
@@ -302,7 +301,7 @@ export default class MissionScene extends Phaser.Scene {
       if (pointer.rightButtonDown() && this.selectedUnits.length > 0) {
         const worldPoint = pointer.positionToCamera(this.cameras.main);
         // Проверка: клик по ресурсу
-        const resourceObj = this.resourceObjects.find(r => Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, r.circ.x, r.circ.y) < TILE_SIZE);
+        const resourceObj = this.resourceDeposits.find(r => Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, r.circ.x, r.circ.y) < TILE_SIZE);
         if (resourceObj) {
           this.selectedUnits.forEach(u => {
             if (u.type.id === 'worker') {

@@ -175,8 +175,8 @@ export default class AIStrategist {
       const tx = Math.floor(u.x / 32), ty = Math.floor(u.y / 32);
       obstacles.add(`${tx},${ty}`);
     }
-    if (this.scene.resourceObjects) {
-      for (const r of this.scene.resourceObjects) {
+    if (this.scene.resourceDeposits) {
+      for (const r of this.scene.resourceDeposits) {
         obstacles.add(`${r.x},${r.y}`);
       }
     }
@@ -266,8 +266,8 @@ export default class AIStrategist {
       }
     }
     // Ресурсы
-    if (this.scene.resourceObjects) {
-      for (const r of this.scene.resourceObjects) {
+    if (this.scene.resourceDeposits) {
+      for (const r of this.scene.resourceDeposits) {
         allRects.push({ x: r.x, y: r.y, w: 1, h: 1, isHQ: false });
       }
     }
@@ -406,8 +406,8 @@ export default class AIStrategist {
       vision.push({ x: cx, y: cy, r });
     }
     // --- Ресурсы ---
-    if (this.scene.resourceObjects) {
-      for (const res of this.scene.resourceObjects) {
+    if (this.scene.resourceDeposits) {
+      for (const res of this.scene.resourceDeposits) {
         let visible = false;
         for (const v of vision) {
           if (Phaser.Math.Distance.Between(res.x * 32 + 16, res.y * 32 + 16, v.x, v.y) < v.r) visible = true;
