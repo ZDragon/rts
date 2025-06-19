@@ -25,10 +25,6 @@ const TILE_TYPES = [
   { name: 'песок', color: 0xffeb3b },
 ];
 
-function randomTileType() {
-  return Math.floor(Math.random() * TILE_TYPES.length);
-}
-
 export default class MissionScene extends Phaser.Scene {
   constructor() {
     super({ key: 'MissionScene' });
@@ -77,39 +73,6 @@ export default class MissionScene extends Phaser.Scene {
     menuBtn.on('pointerdown', () => { 
       this.scene.stop('MissionScene');
       this.scene.start('MainMenuScene'); 
-    });
-    // --- Кнопка отображения маршрутов ---
-    this.routeLines = [];
-    this.showRoutesBtn = this.add.text(1100, 24, 'Показать маршруты', {
-      fontSize: '18px', color: '#fff', backgroundColor: '#1976d2', padding: { left: 14, right: 14, top: 6, bottom: 6 }, fontFamily: 'sans-serif', depth: 101
-    }).setDepth(101).setOrigin(0, 0.5).setInteractive({ useHandCursor: true }).setScrollFactor(0);
-    this.showRoutesBtn.on('pointerdown', () => {
-      // Удаляем старые линии
-      this.routeLines.forEach(l => l.destroy());
-      this.routeLines = [];
-      // --- Маршруты игрока ---
-      for (const u of this.units) {
-        if (u.path && u.path.length > 0) {
-          for (let i = 0; i < u.path.length - 1; i++) {
-            const a = u.path[i], b = u.path[i + 1];
-            const line = this.add.line(0, 0, a.x * 32 + 16, a.y * 32 + 16, b.x * 32 + 16, b.y * 32 + 16, 0x00e6e6).setLineWidth(3).setDepth(500);
-            this.routeLines.push(line);
-          }
-        }
-      }
-      // --- Маршруты ИИ ---
-      if (this.aiEnemies) {
-        for (const ai of this.aiEnemies) {
-          const paths = ai.getAllUnitPaths ? ai.getAllUnitPaths() : [];
-          for (const path of paths) {
-            for (let i = 0; i < path.length - 1; i++) {
-              const a = path[i], b = path[i + 1];
-              const line = this.add.line(0, 0, a.x, a.y, b.x, b.y, 0xff4444).setLineWidth(3).setDepth(500);
-              this.routeLines.push(line);
-            }
-          }
-        }
-      }
     });
 
     // Левая панель
@@ -234,13 +197,8 @@ export default class MissionScene extends Phaser.Scene {
 
     // --- Система построек ---
     this.selectedBuilding = null;
-    this.buildingsOnMap = [];
-    this.buildQueue = [];
     this.buildPreview = null;
-    this.units = [];
     this.selectedBuildingInstance = null;
-    this.unitCreateBtn = null;
-    this.selectedUnit = null;
     this.selectedUnits = [];
     this.selectBox = null;
     this.isSelecting = false;
@@ -306,7 +264,9 @@ export default class MissionScene extends Phaser.Scene {
         const dragThreshold = 5;
         if (dx < dragThreshold && dy < dragThreshold) {
           // Это клик — выделяем юнита под курсором
-          const unit = this.units.find(u => Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, u.x, u.y) < 18);
+          // Получаем юнитов из PlayerController
+          const allUnits = this.playerController.state.units || [];
+          const unit = allUnits.find(u => Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, u.x, u.y) < 18);
           if (unit) {
             this.selectSingleUnit(unit);
           } else {
@@ -795,11 +755,16 @@ export default class MissionScene extends Phaser.Scene {
     unit.sprite.setStrokeStyle(3, 0xffff00);
     this.infoText.setText(`Выбран: ${unit.type.name}`);
   }
+  
   selectUnitsInBox(x, y, w, h) {
     this.selectedUnits.forEach(u => u.sprite.setStrokeStyle());
-    this.selectedUnits = this.units.filter(u =>
+    
+    // Получаем юнитов из PlayerController, а не из this.units
+    const allUnits = this.playerController.state.units || [];
+    this.selectedUnits = allUnits.filter(u =>
       u.x > x && u.x < x + w && u.y > y && u.y < y + h
     );
+    
     this.selectedUnits.forEach(u => u.sprite.setStrokeStyle(3, 0xffff00));
     if (this.selectedUnits.length === 1) {
       this.infoText.setText(`Выбран: ${this.selectedUnits[0].type.name}`);
@@ -809,23 +774,10 @@ export default class MissionScene extends Phaser.Scene {
       this.infoText.setText('Информация о выбранном объекте');
     }
   }
+  
   deselectAllUnits() {
     this.selectedUnits.forEach(u => u.sprite.setStrokeStyle());
     this.selectedUnits = [];
     this.infoText.setText('Информация о выбранном объекте');
-  }
-
-  getAllUnits() {
-    const units = [];
-    for (const u of this.units) {
-      units.push(u);
-    }
-    for (const u of this.aiEnemies) {
-      units.push(...u.strategist.getAllUnits());
-    }
-    return units;
-  }
-  getAllBuildings() {
-    return this.buildingsOnMap;
   }
 } 
