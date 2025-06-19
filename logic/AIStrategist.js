@@ -224,6 +224,9 @@ export default class AIStrategist {
     lines.push(this.playerContact ? 'Контакт с игроком: да' : 'Контакт с игроком: нет');
     lines.push(`Видимых ресурсов: ${this.memory.resources.size}`);
     lines.push(`Видимых врагов: ${this.memory.enemyUnits.size}`);
+    // Добавляем информацию о ресурсах
+    const res = this.getAllResources();
+    lines.push(`Ресурсы: З:${res.золото} Д:${res.дерево} К:${res.камень} М:${res.металл}`);
     const workers = this.getAllUnits().filter(u => u.type.id === 'worker' && u.isAlive());
     const wGather = workers.filter(w => w.state === 'gather').length;
     lines.push(`Рабочие: ${workers.length} (добывают: ${wGather})`);
@@ -413,7 +416,7 @@ export default class AIStrategist {
           if (Phaser.Math.Distance.Between(res.x * 32 + 16, res.y * 32 + 16, v.x, v.y) < v.r) visible = true;
         }
         const key = `${res.x},${res.y}`;
-        if (visible) this.memory.resources.set(key, { ...res, lastSeen: Date.now() });
+        if (visible) this.memory.resources.set(key, { deposit: res, lastSeen: Date.now() });
         else if (this.memory.resources.has(key) && Date.now() - this.memory.resources.get(key).lastSeen > 10000) this.memory.resources.delete(key);
       }
     }
@@ -456,13 +459,13 @@ export default class AIStrategist {
       if (worker.state === 'gather' && worker.stateData.resourceObj && worker.stateData.resourceObj.amount > 0) continue;
       let best = null, bestDist = Infinity;
       for (const [key, res] of this.memory.resources.entries()) {
-        if (!needed[res.type]) continue;
-        if (res.amount <= 0) continue;
-        const dist = Phaser.Math.Distance.Between(worker.x, worker.y, res.x * 32 + 16, res.y * 32 + 16);
+        if (!needed[res.deposit.type]) continue;
+        if (res.deposit.amount <= 0) continue;
+        const dist = Phaser.Math.Distance.Between(worker.x, worker.y, res.deposit.x * 32 + 16, res.deposit.y * 32 + 16);
         if (dist < bestDist) { best = res; bestDist = dist; }
       }
       if (best) {
-        worker.setState('gather', { resourceObj: best });
+        worker.setState('gather', { resourceObj: best.deposit });
       } else {
         worker.setState('idle');
       }

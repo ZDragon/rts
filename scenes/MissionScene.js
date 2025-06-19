@@ -7,6 +7,7 @@ import ResourceGathering from '../logic/ResourceGathering.js';
 import AIEnemy from '../logic/AI.js';
 import PlayerUnitsController from '../logic/PlayerUnits.js';
 import ResourceDeposit from '../logic/ResourceDeposit.js';
+import MinimapController from '../logic/MinimapController.js';
 
 const TILE_SIZE = 32;
 const MAP_SIZE = 100;
@@ -104,10 +105,6 @@ export default class MissionScene extends Phaser.Scene {
       fontSize: '20px', color: '#fff', fontFamily: 'sans-serif', depth: 101
     }).setDepth(101).setOrigin(0.5).setScrollFactor(0);
 
-    // Миникарта (заглушка)
-    this.add.rectangle(1200, 650, 160, 120, 0x111111).setDepth(100).setScrollFactor(0);
-    this.add.text(1200, 650, 'Миникарта', { fontSize: '16px', color: '#fff', fontFamily: 'sans-serif', depth: 101 }).setDepth(101).setOrigin(0.5).setScrollFactor(0);
-
     // --- Интерфейс очереди строительства ---
     this.add.rectangle(1200, 520, 160, 100, 0x222222).setDepth(150).setScrollFactor(0);
     this.queueTitle = this.add.text(1200, 480, 'Строится:', {
@@ -121,6 +118,10 @@ export default class MissionScene extends Phaser.Scene {
     this.tileData = map.tileData.map(row => [...row]);
     this.tileLayer = this.add.layer();
     this.renderTiles();
+
+    // Инициализация миникарты
+    this.minimap = new MinimapController(this);
+    this.minimap.renderTerrain();
 
     // --- Размещение стартовых баз игрока ---
     this.playerBases = [];
@@ -336,6 +337,9 @@ export default class MissionScene extends Phaser.Scene {
       this.cameras.main.scrollX = Phaser.Math.Clamp(this.cameras.main.scrollX + dx, 0, MAP_SIZE * TILE_SIZE - VIEWPORT_WIDTH);
       this.cameras.main.scrollY = Phaser.Math.Clamp(this.cameras.main.scrollY + dy, 0, MAP_SIZE * TILE_SIZE - VIEWPORT_HEIGHT);
     }
+
+    // Обновление миникарты
+    this.minimap.update();
 
     // Обновление очереди строительства
     this.updateBuildQueue(delta / 1000);
