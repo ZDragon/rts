@@ -8,6 +8,8 @@ import AIEnemy from '../logic/AI.js';
 import PlayerUnitsController from '../logic/PlayerUnits.js';
 import ResourceDeposit from '../logic/ResourceDeposit.js';
 import MinimapController from '../logic/MinimapController.js';
+import PlayerController from '../logic/PlayerController.js';
+import {BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController} from '../logic/BuildingController.js';
 
 const TILE_SIZE = 32;
 const MAP_SIZE = 100;
@@ -29,7 +31,7 @@ function randomTileType() {
 
 export default class MissionScene extends Phaser.Scene {
   constructor() {
-    super('MissionScene');
+    super({ key: 'MissionScene' });
   }
 
   init(data) {
@@ -37,6 +39,29 @@ export default class MissionScene extends Phaser.Scene {
   }
 
   create() {
+    // Инициализация контроллера игрока
+    this.playerController = new PlayerController(this);
+    
+    // Устанавливаем цели миссии
+    this.playerController.setMissionGoals([
+      // Пример целей по умолчанию
+      {
+        type: 'BUILD_COUNT',
+        buildingType: 'barracks',
+        count: 1,
+        failOnLess: false
+      },
+      {
+        type: 'UNIT_COUNT',
+        unitType: 'worker',
+        count: 5,
+        failOnLess: false
+      },
+      {
+        type: 'DESTROY_ENEMY'
+      }
+    ]);
+
     // --- RTS UI ---
     // Верхняя панель
     this.add.rectangle(640, 24, 1280, 48, 0x222222).setDepth(100).setScrollFactor(0);
@@ -115,6 +140,12 @@ export default class MissionScene extends Phaser.Scene {
     // --- Генерация карты ---
     const mapIndex = (this.missionNumber - 1) % MAPS.length;
     const map = MAPS[mapIndex];
+    
+    // Если в карте есть цели миссии, устанавливаем их
+    if (map.goals) {
+      this.playerController.setMissionGoals(map.goals);
+    }
+
     this.tileData = map.tileData.map(row => [...row]);
     this.tileLayer = this.add.layer();
     this.renderTiles();
@@ -321,7 +352,19 @@ export default class MissionScene extends Phaser.Scene {
     this.resourceGathering = new ResourceGathering(this);
   }
 
+  preload() {
+    // Создаем текстуру для частиц
+    const pixelTexture = this.textures.createCanvas('pixel', 2, 2);
+    const context = pixelTexture.getContext();
+    context.fillStyle = '#ffffff';
+    context.fillRect(0, 0, 2, 2);
+    pixelTexture.refresh();
+  }
+
   update(time, delta) {
+    // Обновляем контроллер игрока
+    this.playerController.update(time, delta);
+
     // Стрелки
     let dx = 0, dy = 0;
     if (this.arrowScroll.left) dx -= SCROLL_SPEED;
@@ -395,12 +438,11 @@ export default class MissionScene extends Phaser.Scene {
   }
 
   getResString() {
-    const res = resourceManager.getAll();
-    return Object.entries(res).map(([k, v]) => `${k}: ${v}`).join('   ');
+    return this.playerController.getResourceString();
   }
 
   updateResText() {
-    this.resText.setText(this.getResString());
+    this.playerController.updateResourceDisplay();
   }
 
   showMessage(text) {
@@ -416,38 +458,53 @@ export default class MissionScene extends Phaser.Scene {
 
   // --- Постройки ---
   canBuildHere(tileX, tileY, building) {
-    // Проверка границ
-    if (tileX < 0 || tileY < 0 || tileX + building.size > MAP_SIZE || tileY + building.size > MAP_SIZE) return false;
-    // Проверка тайлов (только трава или песок)
-    for (let y = 0; y < building.size; y++) {
-      for (let x = 0; x < building.size; x++) {
-        const t = this.tileData[tileY + y][tileX + x];
-        if (!(TILE_TYPES[t].name === 'трава' || TILE_TYPES[t].name === 'песок')) return false;
+    // Проверяем границы карты
+    if (tileX < 0 || tileY < 0 || 
+        tileX + building.size > MAP_SIZE || 
+        tileY + building.size > MAP_SIZE) {
+      return false;
+    }
+
+    // Проверяем тип тайла (можно строить только на траве)
+    for (let y = tileY; y < tileY + building.size; y++) {
+      for (let x = tileX; x < tileX + building.size; x++) {
+        if (this.tileData[y][x] !== 0) return false;
       }
     }
-    // Проверка перекрытия других зданий
-    for (const b of this.buildingsOnMap) {
-      if (this.rectsOverlap(tileX, tileY, building.size, building.size, b.x, b.y, b.size, b.size)) return false;
+
+    // Проверяем пересечения с другими зданиями
+    const buildingRect = {
+      x: tileX * TILE_SIZE,
+      y: tileY * TILE_SIZE,
+      w: building.size * TILE_SIZE,
+      h: building.size * TILE_SIZE
+    };
+
+    for (const existingBuilding of this.playerController.state.buildings) {
+      if (existingBuilding.state === 'destroyed') continue;
+      
+      const existing = {
+        x: existingBuilding.x * TILE_SIZE,
+        y: existingBuilding.y * TILE_SIZE,
+        w: existingBuilding.type.size * TILE_SIZE,
+        h: existingBuilding.type.size * TILE_SIZE
+      };
+
+      if (this.rectsOverlap(
+        buildingRect.x, buildingRect.y, buildingRect.w, buildingRect.h,
+        existing.x, existing.y, existing.w, existing.h
+      )) {
+        return false;
+      }
     }
-    // Проверка очереди строительства
-    for (const b of this.buildQueue) {
-      if (this.rectsOverlap(tileX, tileY, building.size, building.size, b.x, b.y, b.size, b.size)) return false;
-    }
+
     return true;
   }
   rectsOverlap(x1, y1, w1, h1, x2, y2, w2, h2) {
     return !(x1 + w1 <= x2 || x2 + w2 <= x1 || y1 + h1 <= y2 || y2 + h2 <= y1);
   }
   payBuildingCost(building) {
-    const cost = building.cost;
-    for (const res in cost) {
-      if (resourceManager.get(res) < cost[res]) return false;
-    }
-    for (const res in cost) {
-      resourceManager.spend(res, cost[res]);
-    }
-    this.updateResText();
-    return true;
+    return this.playerController.spendResources(building.cost);
   }
   queueBuilding(tileX, tileY, building) {
     // Создаём контейнер для визуализации
@@ -492,7 +549,7 @@ export default class MissionScene extends Phaser.Scene {
       { fontSize: '14px', color: '#ff0', fontFamily: 'sans-serif' }
     ).setOrigin(0.5).setAlpha(0.8);
     group.add([rect, border, label, barBg, barFg, buildText]);
-    this.buildQueue.push({
+    const buildingObj = {
       x: tileX,
       y: tileY,
       type: building,
@@ -500,7 +557,9 @@ export default class MissionScene extends Phaser.Scene {
       size: building.size,
       status: 'building',
       group, rect, border, label, barBg, barFg, buildText
-    });
+    };
+    this.buildQueue.push(buildingObj);
+    this.playerController.state.buildQueue.push(buildingObj);
   }
   updateBuildQueue(dt) {
     for (const b of this.buildQueue) {
@@ -527,6 +586,8 @@ export default class MissionScene extends Phaser.Scene {
         b.hpBar = this.add.rectangle(b.x * TILE_SIZE + size / 2, b.y * TILE_SIZE + 8, size - 8, 8, 0x00ff00).setDepth(23);
         // Переносим в массив построенных зданий
         this.buildingsOnMap.push(b);
+        // Добавляем здание в контроллер
+        this.playerController.addBuilding(b);
       }
     }
     // Оставляем в очереди только строящиеся здания
@@ -583,115 +644,180 @@ export default class MissionScene extends Phaser.Scene {
   // --- Выбор здания ---
   // Добавить обработку клика по построенному зданию
   pointerDownOnMap(worldX, worldY) {
-    // Проверяем, кликнули ли по зданию
-    const building = this.buildingsOnMap.find(b =>
-      worldX >= b.x * TILE_SIZE && worldX < (b.x + b.size) * TILE_SIZE &&
-      worldY >= b.y * TILE_SIZE && worldY < (b.y + b.size) * TILE_SIZE
-    );
-    if (building) {
-      this.selectBuildingInstance(building);
-      return true;
+    if (this.selectedBuilding) {
+      const tileX = Math.floor(worldX / TILE_SIZE);
+      const tileY = Math.floor(worldY / TILE_SIZE);
+
+      if (this.canBuildHere(tileX, tileY, this.selectedBuilding)) {
+        // Создаем здание через контроллер игрока
+        const building = this.playerController.createBuilding(
+          this.selectedBuilding.id,
+          tileX,
+          tileY
+        );
+
+        if (building) {
+          this.showMessage(`Строится: ${this.selectedBuilding.name}`);
+          this.selectedBuilding = null;
+          if (this.buildPreview) {
+            this.buildPreview.destroy();
+            this.buildPreview = null;
+          }
+        }
+      } else {
+        this.showMessage('Здесь нельзя строить');
+      }
     }
-    this.deselectBuildingInstance();
-    return false;
   }
 
   selectBuildingInstance(building) {
     this.selectedBuildingInstance = building;
-    this.infoText.setText(`Выбрано: ${building.type.name}`);
-    // Если здание может создавать юнитов — показать кнопку
-    const unitType = UNITS.find(u => u.building === building.type.id);
-    if (unitType) {
-      if (this.unitCreateBtn) this.unitCreateBtn.destroy();
-      this.unitCreateBtn = this.add.text(640, 660, `Создать: ${unitType.name}`, {
-        fontSize: '20px', color: '#fff', backgroundColor: '#388e3c', padding: { left: 16, right: 16, top: 8, bottom: 8 }, fontFamily: 'sans-serif'
-      }).setOrigin(0.5).setDepth(201).setScrollFactor(0).setInteractive({ useHandCursor: true });
-      this.unitCreateBtn.on('pointerdown', () => {
-        if (this.payUnitCost(unitType)) {
-          this.createUnitNearBuilding(unitType, building);
-          this.showMessage(`${unitType.name} создан!`);
-        } else {
-          this.showMessage('Недостаточно ресурсов!');
+    this.deselectAllUnits();
+
+    // Обновляем информационную панель
+    let info = `${building.type.name} (HP: ${building.hp}/${building.maxHP})`;
+    
+    // Добавляем специфичную информацию в зависимости от типа здания
+    if (building instanceof UnitFactoryController) {
+      info += `\nВ очереди: ${building.productionQueue.length}/${building.maxQueueSize}`;
+      
+      // Создаем кнопки для производства юнитов
+      if (this.unitButtons) {
+        this.unitButtons.forEach(btn => btn.destroy());
+      }
+      this.unitButtons = [];
+      
+      building.type.unitTypes.forEach((unitType, i) => {
+        const btn = this.add.text(200 + i * 120, 680, unitType, {
+          fontSize: '18px',
+          backgroundColor: '#444',
+          padding: { x: 10, y: 5 },
+          color: '#fff'
+        }).setScrollFactor(0).setDepth(101).setInteractive();
+        
+        btn.on('pointerdown', () => {
+          if (building.canQueueUnit(UNITS[unitType])) {
+            building.queueUnit(UNITS[unitType]);
+          } else {
+            this.showMessage('Невозможно создать юнита: нет ресурсов или очередь полна');
+          }
+        });
+        
+        this.unitButtons.push(btn);
+      });
+    } else if (building instanceof ResearchLabController) {
+      info += `\nИсследований в очереди: ${building.researchQueue.length}/${building.maxQueueSize}`;
+      
+      // Создаем кнопки для исследований
+      if (this.researchButtons) {
+        this.researchButtons.forEach(btn => btn.destroy());
+      }
+      this.researchButtons = [];
+      
+      building.availableUpgrades.forEach((upgrade, i) => {
+        if (!this.playerController.hasResearch(upgrade.id)) {
+          const btn = this.add.text(200 + i * 160, 680, upgrade.name, {
+            fontSize: '16px',
+            backgroundColor: '#444',
+            padding: { x: 10, y: 5 },
+            color: '#fff'
+          }).setScrollFactor(0).setDepth(101).setInteractive();
+          
+          btn.on('pointerdown', () => {
+            if (building.canResearch(upgrade.id)) {
+              building.queueResearch(upgrade.id);
+            } else {
+              this.showMessage('Невозможно начать исследование: нет ресурсов или очередь полна');
+            }
+          });
+          
+          this.researchButtons.push(btn);
         }
       });
-    } else {
-      if (this.unitCreateBtn) { this.unitCreateBtn.destroy(); this.unitCreateBtn = null; }
+    } else if (building instanceof StorageBuildingController) {
+      const limits = building.getResourceLimits();
+      info += '\nБонус к лимитам:';
+      for (const [res, limit] of Object.entries(limits)) {
+        info += ` ${res}: +${limit}`;
+      }
     }
+    
+    this.infoText.setText(info);
   }
 
   deselectBuildingInstance() {
     this.selectedBuildingInstance = null;
-    this.infoText.setText('Информация о выбранном объекте');
-    if (this.unitCreateBtn) { this.unitCreateBtn.destroy(); this.unitCreateBtn = null; }
+    this.infoText.setText('');
+    
+    // Удаляем кнопки производства юнитов
+    if (this.unitButtons) {
+      this.unitButtons.forEach(btn => btn.destroy());
+      this.unitButtons = [];
+    }
+    
+    // Удаляем кнопки исследований
+    if (this.researchButtons) {
+      this.researchButtons.forEach(btn => btn.destroy());
+      this.researchButtons = [];
+    }
   }
 
-  payUnitCost(unitType) {
-    for (const res in unitType.cost) {
-      if (resourceManager.get(res) < unitType.cost[res]) return false;
+  // Проверка свободной позиции для создания юнита
+  isPositionFree(x, y) {
+    // Проверяем границы карты
+    if (x < 0 || y < 0 || x >= MAP_SIZE || y >= MAP_SIZE) {
+      return false;
     }
-    for (const res in unitType.cost) {
-      resourceManager.spend(res, unitType.cost[res]);
+
+    // Проверяем тип тайла
+    if (this.tileData[y][x] !== 0) {
+      return false;
     }
-    this.updateResText();
+
+    // Проверяем пересечения с другими объектами
+    const pos = { x: x * TILE_SIZE, y: y * TILE_SIZE };
+    
+    // Проверяем здания
+    for (const building of this.playerController.state.buildings) {
+      if (building.state === 'destroyed') continue;
+      
+      const buildingRect = {
+        x: building.x * TILE_SIZE,
+        y: building.y * TILE_SIZE,
+        w: building.type.size * TILE_SIZE,
+        h: building.type.size * TILE_SIZE
+      };
+
+      if (this.rectsOverlap(
+        pos.x, pos.y, TILE_SIZE, TILE_SIZE,
+        buildingRect.x, buildingRect.y, buildingRect.w, buildingRect.h
+      )) {
+        return false;
+      }
+    }
+
+    // Проверяем юнитов
+    for (const unit of this.playerController.state.units) {
+      const unitPos = {
+        x: unit.x - TILE_SIZE/2,
+        y: unit.y - TILE_SIZE/2
+      };
+
+      if (this.rectsOverlap(
+        pos.x, pos.y, TILE_SIZE, TILE_SIZE,
+        unitPos.x, unitPos.y, TILE_SIZE, TILE_SIZE
+      )) {
+        return false;
+      }
+    }
+
     return true;
   }
 
-  createUnitNearBuilding(unitType, building) {
-    // Радиус юнита
-    const unitRadius = 16;
-    // Кандидаты для появления (по кругу вокруг здания)
-    const candidates = [];
-    const bx = building.x * TILE_SIZE;
-    const by = building.y * TILE_SIZE;
-    const bsize = building.size * TILE_SIZE;
-    // 8 направлений вокруг здания, потом дальше по кругу
-    for (let r = 1; r <= 3; r++) {
-      for (let dx = -r; dx <= r; dx++) {
-        for (let dy = -r; dy <= r; dy++) {
-          if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue; // только по периметру
-          const px = bx + bsize / 2 + dx * (unitRadius * 2 + 4);
-          const py = by + bsize / 2 + dy * (unitRadius * 2 + 4);
-          candidates.push({ px, py });
-        }
-      }
-    }
-    // Проверка на пересечение с другими юнитами и зданиями
-    let found = null;
-    for (const pos of candidates) {
-      if (!this.isPositionBlocked(pos.px, pos.py, unitRadius)) {
-        found = pos;
-        break;
-      }
-    }
-    if (!found) {
-      this.showMessage('Нет места для юнита!');
-      return;
-    }
-    const sprite = this.add.circle(found.px, found.py, unitRadius, unitType.color).setDepth(30);
-    const label = this.add.text(found.px, found.py, unitType.name, { fontSize: '12px', color: '#222', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(31);
-    // HP
-    const maxHP = unitType.id === 'worker' ? 40 : unitType.id === 'soldier' ? 80 : 120;
-    const hp = maxHP;
-    const hpBarBg = this.add.rectangle(found.px, found.py - 22, 32, 6, 0x444444).setDepth(32);
-    const hpBar = this.add.rectangle(found.px, found.py - 22, 32, 6, 0x00ff00).setDepth(33);
-    this.units.push({ x: found.px, y: found.py, type: unitType, sprite, label, selected: false, hp, maxHP, hpBar, hpBarBg });
-  }
-
-  isPositionBlocked(px, py, radius) {
-    // Проверка на пересечение с юнитами
-    for (const u of this.units) {
-      const dist = Phaser.Math.Distance.Between(px, py, u.x, u.y);
-      if (dist < radius * 2) return true;
-    }
-    // Проверка на пересечение со зданиями
-    for (const b of this.buildingsOnMap) {
-      const left = b.x * TILE_SIZE;
-      const right = (b.x + b.size) * TILE_SIZE;
-      const top = b.y * TILE_SIZE;
-      const bottom = (b.y + b.size) * TILE_SIZE;
-      if (px + radius > left && px - radius < right && py + radius > top && py - radius < bottom) return true;
-    }
-    return false;
+  // Создание юнита
+  createUnit(unitType, x, y) {
+    // TODO: Реализовать создание юнита с использованием PlayerUnitsController
+    return null;
   }
 
   selectSingleUnit(unit) {
