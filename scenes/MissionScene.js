@@ -106,8 +106,8 @@ export default class MissionScene extends Phaser.Scene {
     }).setDepth(101).setOrigin(0.5).setScrollFactor(0);
 
     // --- Интерфейс очереди строительства ---
-    this.add.rectangle(1200, 520, 160, 100, 0x222222).setDepth(150).setScrollFactor(0);
-    this.queueTitle = this.add.text(1200, 480, 'Строится:', {
+    this.add.rectangle(80, 520, 160, 100, 0x222222).setDepth(150).setScrollFactor(0);
+    this.queueTitle = this.add.text(80, 480, 'Строится:', {
       fontSize: '18px', color: '#fff', fontFamily: 'sans-serif'
     }).setOrigin(0.5).setDepth(151).setScrollFactor(0);
     this.queueUI = [];

@@ -5,8 +5,10 @@ export default class MinimapController {
     // Размеры миникарты
     this.width = 160;
     this.height = 120;
-    this.x = 1200;
-    this.y = 650;
+    
+    // Позиция миникарты (с отступами 30px от правого и нижнего края)
+    this.x = 1280 - 50 - this.width/2;  // 1280 - ширина экрана
+    this.y = 720 - 50 - this.height/2;   // 720 - высота экрана
     
     // Создаем графические элементы миникарты
     this.createMinimapElements();
@@ -26,7 +28,24 @@ export default class MinimapController {
       this.width,
       this.height,
       0x111111
-    );
+    ).setScrollFactor(0);
+    
+    // Устанавливаем интерактивную область
+    const hitArea = new Phaser.Geom.Rectangle(
+        0,
+        0,
+        this.width,
+        this.height
+      );
+    this.background.setInteractive({
+        hitArea: hitArea,
+        hitAreaCallback: Phaser.Geom.Rectangle.Contains,
+        draggable: false,
+        dropZone: false,
+        useHandCursor: true,
+        pixelPerfect: false,
+        alphaTolerance: 0.5,
+    });
     this.container.add(this.background);
     
     // Создаем графический объект для отрисовки тайлов карты
@@ -47,19 +66,16 @@ export default class MinimapController {
       0,
       0xffffff,
       0
-    ).setStrokeStyle(1, 0xffffff, 0.5);
+    ).setStrokeStyle(1, 0xffffff, 0.5).setScrollFactor(0);
     this.container.add(this.viewportRect);
   }
 
   setupInteraction() {
-    // Делаем фон миникарты интерактивным
-    this.background.setInteractive();
-    
     // Обработка клика по миникарте
     this.background.on('pointerdown', (pointer) => {
-      // Получаем локальные координаты относительно верхнего левого угла миникарты
-      const localX = pointer.x - (this.x - this.width/2);
-      const localY = pointer.y - (this.y - this.height/2);
+      // Получаем локальные координаты относительно центра миникарты
+      const localX = pointer.x - this.x + this.width/2;
+      const localY = pointer.y - this.y + this.height/2;
       
       // Проверяем, что клик был внутри миникарты
       if (localX >= 0 && localX <= this.width && localY >= 0 && localY <= this.height) {
