@@ -8,11 +8,20 @@ export const BUILDING_STATES = {
   DESTROYED: 'destroyed'
 };
 
+// Типы зданий
+export const BUILDING_TYPES = {
+  STORAGE: 'storage',
+  UNIT_FACTORY: 'unitFactory',
+  RESEARCH: 'research',
+  DEFENSE: 'defense'
+};
+
 // Иконки для типов зданий
 const BUILDING_ICONS = {
-  storage: '🏠',
-  unitFactory: '⚔️',
-  research: '📚'
+  [BUILDING_TYPES.STORAGE]: '🏠',
+  [BUILDING_TYPES.UNIT_FACTORY]: '⚔️',
+  [BUILDING_TYPES.RESEARCH]: '📚',
+  [BUILDING_TYPES.DEFENSE]: '🛡️'
 };
 
 // Базовый класс для всех зданий
@@ -35,6 +44,45 @@ export class BuildingController {
     
     // Анимация строительства
     this.startConstructionAnimation();
+  }
+
+  // Возвращает тип здания
+  getBuildingType() {
+    return this.type.type || null;
+  }
+
+  // Проверяет, является ли здание определенного типа
+  isBuildingType(type) {
+    return this.getBuildingType() === type;
+  }
+
+  // Возвращает правильный контроллер для этого здания
+  static createController(scene, x, y, buildingType) {
+    switch (buildingType.type) {
+      case BUILDING_TYPES.STORAGE:
+        return new StorageBuildingController(scene, x, y, buildingType);
+      case BUILDING_TYPES.UNIT_FACTORY:
+        return new UnitFactoryController(scene, x, y, buildingType);
+      case BUILDING_TYPES.RESEARCH:
+        return new ResearchLabController(scene, x, y, buildingType);
+      default:
+        return new BuildingController(scene, x, y, buildingType);
+    }
+  }
+
+  // Проверяет, является ли здание фабрикой юнитов
+  isUnitFactory() {
+    return this.isBuildingType(BUILDING_TYPES.UNIT_FACTORY);
+  }
+
+  // Проверяет, является ли здание складом
+  isStorage() {
+    return this.isBuildingType(BUILDING_TYPES.STORAGE);
+  }
+
+  // Проверяет, является ли здание исследовательской лабораторией
+  isResearchLab() {
+    return this.isBuildingType(BUILDING_TYPES.RESEARCH);
   }
 
   createVisuals() {
@@ -365,163 +413,86 @@ export class UnitFactoryController extends BuildingController {
   constructor(scene, x, y, buildingType) {
     super(scene, x, y, buildingType);
     this.productionQueue = [];
-    this.currentProduction = null;
-    this.productionProgress = 0;
-    this.unitLimit = 5; // Каждая фабрика добавляет 5 к лимиту юнитов
+    this.type = buildingType;
+    this.maxQueueSize = buildingType.maxQueueSize || 5;
+    this.unitLimitBonus = buildingType.unitLimitBonus || 0;
   }
 
-  canQueueUnit(unitType) {
-    return this.state === BUILDING_STATES.IDLE || this.state === BUILDING_STATES.PRODUCING;
-  }
-
-  queueUnit(unitType, playerController) {
-    if (!this.canQueueUnit(unitType)) return false;
+  canQueueUnit(unitData) {
+    if (!unitData) return false;
     
-    // Проверяем лимит юнитов
-    if (playerController.state.units.length >= playerController.state.unitLimit) {
-      console.warn('Достигнут лимит юнитов');
+    // Проверяем, не превышен ли размер очереди
+    if (this.productionQueue.length >= this.maxQueueSize) {
       return false;
     }
-
+    
     // Проверяем наличие ресурсов
-    if (!playerController.hasResources(unitType.cost)) {
-      console.warn('Недостаточно ресурсов для создания юнита');
-      return false;
-    }
+    return this.scene.playerController.hasResources(unitData.cost);
+  }
 
-    // Списываем ресурсы сразу при постановке в очередь
-    playerController.spendResources(unitType.cost);
-
+  queueUnit(unitData) {
+    if (!this.canQueueUnit(unitData)) return false;
+    
+    // Списываем ресурсы
+    this.scene.playerController.spendResources(unitData.cost);
+    
     // Добавляем в очередь
     this.productionQueue.push({
-      type: unitType,
+      type: unitData,
       progress: 0,
-      time: unitType.buildTime || 5
+      buildTime: unitData.buildTime || 5
     });
-
-    // Если не производим, начинаем производство
-    if (this.state !== BUILDING_STATES.PRODUCING) {
-      this.startProduction();
-    }
-
+    
     return true;
   }
 
-  startProduction() {
+  update(dt) {
+    super.update(dt);
+    
+    if (this.state !== BUILDING_STATES.IDLE) return;
+    
+    // Если есть юниты в очереди
     if (this.productionQueue.length > 0) {
-      this.state = BUILDING_STATES.PRODUCING;
-      this.currentProduction = this.productionQueue[0];
-      this.progressBar.setVisible(true);
-      this.progressBarBg.setVisible(true);
-      
-      // Анимация производства
-      this.sprite.setTint(0xffaa00);
-      this.scene.tweens.add({
-        targets: this.sprite,
-        alpha: { from: 0.7, to: 1 },
-        duration: 500,
-        yoyo: true,
-        repeat: -1
-      });
-    }
-  }
-
-  update(time, delta) {
-    super.update(time, delta);
-
-    if (this.state === BUILDING_STATES.PRODUCING && this.currentProduction) {
-      this.currentProduction.progress += delta / 1000;
+      const current = this.productionQueue[0];
+      current.progress += dt;
       
       // Обновляем прогресс-бар
-      const progress = this.currentProduction.progress / this.currentProduction.time;
-      this.progressBar.width = (this.type.size * 32 - 8) * progress;
-
-      if (this.currentProduction.progress >= this.currentProduction.time) {
-        this.completeUnit(this.currentProduction);
+      this.progressBar.setVisible(true);
+      this.progressBarBg.setVisible(true);
+      const progress = current.progress / current.buildTime;
+      this.progressBar.setScale(progress, 1);
+      
+      // Если юнит готов
+      if (current.progress >= current.buildTime) {
+        // Создаем юнита
+        const spawnX = (this.x + this.type.size) * 32;
+        const spawnY = (this.y + this.type.size/2) * 32;
+        
+        let unit;
+        switch(current.type.class) {
+          case 'worker':
+            unit = new WorkerUnit(this.scene, spawnX, spawnY, current.type);
+            break;
+          case 'combat':
+            unit = new CombatUnit(this.scene, spawnX, spawnY, current.type);
+            break;
+          default:
+            unit = new BaseUnit(this.scene, spawnX, spawnY, current.type);
+        }
+        
+        // Добавляем юнита в контроллер игрока
+        this.scene.playerController.addUnit(unit);
+        
+        // Удаляем из очереди
+        this.productionQueue.shift();
+        
+        // Если очередь пуста, скрываем прогресс-бар
+        if (this.productionQueue.length === 0) {
+          this.progressBar.setVisible(false);
+          this.progressBarBg.setVisible(false);
+        }
       }
     }
-  }
-
-  completeUnit(production) {
-    // Создаем юнита соответствующего типа
-    const spawnX = this.x * 32 + this.type.size * 32 + 32;
-    const spawnY = this.y * 32 + this.type.size * 16;
-
-    let unit;
-    if (production.type.id === 'worker') {
-      unit = new WorkerUnit(this.scene, spawnX, spawnY, production.type);
-    } else if (production.type.canAttack) {
-      unit = new CombatUnit(this.scene, spawnX, spawnY, production.type);
-    } else {
-      unit = new BaseUnit(this.scene, spawnX, spawnY, production.type);
-    }
-
-    // Анимация появления
-    unit.sprite.setScale(0);
-    this.scene.tweens.add({
-      targets: unit.sprite,
-      scale: 1,
-      duration: 300,
-      ease: 'Back.easeOut'
-    });
-
-    // Эффект появления
-    this.particles.createEmitter({
-      x: spawnX,
-      y: spawnY,
-      speed: { min: 50, max: 100 },
-      angle: { min: 0, max: 360 },
-      scale: { start: 1, end: 0 },
-      lifespan: 500,
-      quantity: 10,
-      tint: [0x00ff00, 0xffff00],
-      emitting: false,
-      explode: true
-    });
-
-    // Добавляем юнита в список игрока через параметр playerController
-    const playerController = this.scene.game.playerController;
-    if (playerController) {
-      playerController.state.units.push(unit);
-    } else {
-      console.warn('PlayerController не найден при создании юнита');
-    }
-
-    // Удаляем из очереди
-    this.productionQueue.shift();
-    this.currentProduction = null;
-
-    // Сбрасываем прогресс-бар
-    this.progressBar.width = 0;
-
-    // Если очередь пуста, останавливаем производство
-    if (this.productionQueue.length === 0) {
-      this.stopProduction();
-    } else {
-      // Иначе начинаем следующее производство
-      this.startProduction();
-    }
-
-    return unit;
-  }
-
-  stopProduction() {
-    this.state = BUILDING_STATES.IDLE;
-    this.currentProduction = null;
-    this.progressBar.setVisible(false);
-    this.progressBarBg.setVisible(false);
-    this.sprite.clearTint();
-    this.scene.tweens.killTweensOf(this.sprite);
-    this.sprite.setAlpha(1);
-  }
-
-  getQueueInfo() {
-    return {
-      current: this.currentProduction?.type.name,
-      progress: this.currentProduction ? 
-        Math.floor(this.currentProduction.progress / this.currentProduction.time * 100) : 0,
-      queue: this.productionQueue.map(item => item.type.name)
-    };
   }
 }
 
@@ -635,5 +606,6 @@ export default {
   StorageBuildingController,
   UnitFactoryController,
   ResearchLabController,
-  BUILDING_STATES
+  BUILDING_STATES,
+  BUILDING_TYPES
 }; 

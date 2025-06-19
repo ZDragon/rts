@@ -644,7 +644,6 @@ export default class MissionScene extends Phaser.Scene {
   }
 
   // --- Выбор здания ---
-  // Добавить обработку клика по построенному зданию
   pointerDownOnMap(worldX, worldY) {
     if (this.selectedBuilding) {
       const tileX = Math.floor(worldX / TILE_SIZE);
@@ -669,10 +668,37 @@ export default class MissionScene extends Phaser.Scene {
       } else {
         this.showMessage('Здесь нельзя строить');
       }
+      return;
+    }
+
+    // Проверяем клик по существующему зданию
+    const clickedBuilding = this.playerController.state.buildings.find(building => {
+      // Восстанавливаем прототип здания перед проверкой
+      building = building.createController(this, building.x, building.y, building.type);
+      console.log('Тип здания:', building.getBuildingType(), building);
+      
+      const buildingX = building.x * TILE_SIZE;
+      const buildingY = building.y * TILE_SIZE;
+      const buildingSize = building.type.size * TILE_SIZE;
+      return worldX >= buildingX && 
+             worldX < buildingX + buildingSize && 
+             worldY >= buildingY && 
+             worldY < buildingY + buildingSize;
+    });
+
+    if (clickedBuilding) {
+      // Восстанавливаем прототип перед выбором
+      const restoredBuilding = this.playerController.restoreBuildingPrototype(clickedBuilding);
+      this.selectBuildingInstance(restoredBuilding);
+    } else {
+      this.deselectBuildingInstance();
     }
   }
 
   selectBuildingInstance(building) {
+    console.log('Выбрано здание:', building);
+    console.log('Тип здания:', building.getBuildingType());
+    
     this.selectedBuildingInstance = building;
     this.deselectAllUnits();
 
@@ -680,34 +706,61 @@ export default class MissionScene extends Phaser.Scene {
     let info = `${building.type.name} (HP: ${building.hp}/${building.maxHP})`;
     
     // Добавляем специфичную информацию в зависимости от типа здания
-    if (building instanceof UnitFactoryController) {
-      info += `\nВ очереди: ${building.productionQueue.length}/${building.maxQueueSize}`;
+    if (building.isUnitFactory()) {
+      console.log('Это фабрика юнитов');
+      console.log('Доступные типы юнитов:', building.type.unitTypes);
       
-      // Создаем кнопки для производства юнитов
+      info += `\nВ очереди: ${building.productionQueue ? building.productionQueue.length : 0}/${building.type.maxQueueSize || 5}`;
+      
+      // Удаляем старые кнопки, если они есть
       if (this.unitButtons) {
         this.unitButtons.forEach(btn => btn.destroy());
       }
       this.unitButtons = [];
       
-      building.type.unitTypes.forEach((unitType, i) => {
-        const btn = this.add.text(200 + i * 120, 680, unitType, {
+      // Создаем кнопки для производства юнитов
+      const availableUnits = building.type.unitTypes || [];
+      availableUnits.forEach((unitType, i) => {
+        const unitData = UNITS.find(u => u.id === unitType);
+        if (!unitData) return;
+        
+        const btn = this.add.text(200 + i * 160, 680, unitData.name, {
           fontSize: '18px',
           backgroundColor: '#444',
           padding: { x: 10, y: 5 },
           color: '#fff'
         }).setScrollFactor(0).setDepth(101).setInteractive();
         
+        // Добавляем подсказку со стоимостью
+        const costText = Object.entries(unitData.cost || {})
+          .map(([res, amount]) => `${res}: ${amount}`)
+          .join(', ');
+        
+        const tooltip = this.add.text(btn.x, btn.y - 30, costText, {
+          fontSize: '14px',
+          backgroundColor: '#000',
+          padding: { x: 5, y: 3 },
+          color: '#fff'
+        }).setScrollFactor(0).setDepth(102).setVisible(false);
+        
+        btn.on('pointerover', () => tooltip.setVisible(true));
+        btn.on('pointerout', () => tooltip.setVisible(false));
+        
         btn.on('pointerdown', () => {
-          if (building.canQueueUnit(UNITS[unitType])) {
-            building.queueUnit(UNITS[unitType]);
-          } else {
-            this.showMessage('Невозможно создать юнита: нет ресурсов или очередь полна');
+          if (building.canQueueUnit && building.queueUnit) {
+            if (building.canQueueUnit(unitData)) {
+              building.queueUnit(unitData);
+              this.showMessage(`Добавлен в очередь: ${unitData.name}`);
+            } else {
+              this.showMessage('Невозможно создать юнита: нет ресурсов или очередь полна');
+            }
           }
         });
         
         this.unitButtons.push(btn);
+        this.unitButtons.push(tooltip);
       });
-    } else if (building instanceof ResearchLabController) {
+    } else if (building.isResearchLab()) {
       info += `\nИсследований в очереди: ${building.researchQueue.length}/${building.maxQueueSize}`;
       
       // Создаем кнопки для исследований
@@ -736,7 +789,7 @@ export default class MissionScene extends Phaser.Scene {
           this.researchButtons.push(btn);
         }
       });
-    } else if (building instanceof StorageBuildingController) {
+    } else if (building.isStorage()) {
       const limits = building.getResourceLimits();
       info += '\nБонус к лимитам:';
       for (const [res, limit] of Object.entries(limits)) {

@@ -79,7 +79,10 @@ export default class PlayerController {
   // --- Управление постройками ---
   createBuilding(buildingType, x, y) {
     const buildingData = BUILDINGS.find(b => b.id === buildingType);
-    if (!buildingData) return null;
+    if (!buildingData) {
+      console.warn('Building type not found:', buildingType);
+      return null;
+    }
 
     // Проверяем ресурсы
     if (!this.hasResources(buildingData.cost)) {
@@ -87,29 +90,66 @@ export default class PlayerController {
       return null;
     }
 
-    // Создаем соответствующий контроллер
-    let building;
-    switch (buildingData.type) {
-      case 'storage':
-        building = new StorageBuildingController(this.scene, x, y, buildingData);
-        break;
-      case 'unitFactory':
-        building = new UnitFactoryController(this.scene, x, y, buildingData);
-        break;
-      case 'research':
-        building = new ResearchLabController(this.scene, x, y, buildingData);
-        break;
-      default:
-        building = new BuildingController(this.scene, x, y, buildingData);
-    }
+    // Создаем здание через фабричный метод
+    const building = BuildingController.createController(this.scene, x, y, buildingData);
 
     // Списываем ресурсы
     this.spendResources(buildingData.cost);
 
     // Добавляем здание
-    this.state.buildings.push(building);
+    this.addBuilding(building);
     
     return building;
+  }
+
+  addBuilding(building) {
+    // Проверяем, что здание имеет правильный прототип
+    if (!(building instanceof BuildingController)) {
+      console.warn('Попытка добавить здание без правильного прототипа:', building);
+      return;
+    }
+
+    // Добавляем здание в массив
+    if (!this.state.buildings) {
+      this.state.buildings = [];
+    }
+    
+    // Сохраняем тип здания для восстановления прототипа
+    building._controllerType = building.constructor.name;
+    
+    this.state.buildings.push(building);
+    
+    // Обновляем лимиты после добавления здания
+    this.updateLimits();
+  }
+
+  // Метод для восстановления прототипа здания
+  restoreBuildingPrototype(building) {
+    if (!building._controllerType) return building;
+
+    let restoredBuilding;
+    switch (building._controllerType) {
+      case 'StorageBuildingController':
+        Object.setPrototypeOf(building, StorageBuildingController.prototype);
+        break;
+      case 'UnitFactoryController':
+        Object.setPrototypeOf(building, UnitFactoryController.prototype);
+        break;
+      case 'ResearchLabController':
+        Object.setPrototypeOf(building, ResearchLabController.prototype);
+        break;
+      default:
+        Object.setPrototypeOf(building, BuildingController.prototype);
+    }
+    
+    return building;
+  }
+
+  // Переопределяем геттер для зданий
+  getBuildingsByType(type) {
+    return this.state.buildings
+      .map(building => this.restoreBuildingPrototype(building))
+      .filter(b => b.type.id === type);
   }
 
   removeBuilding(building) {
@@ -119,31 +159,22 @@ export default class PlayerController {
     }
   }
 
-  getBuildingsByType(type) {
-    return this.state.buildings.filter(b => b.type.id === type);
-  }
-
   updateLimits() {
     // Сбрасываем к базовым значениям
     this.state.unitLimit = 10;
-    this.state.resourceLimits = {
-      wood: 1000,
-      stone: 1000,
-      gold: 1000,
-      food: 1000
-    };
+    this.state.resourceLimits = { ...DEFAULT_RESOURCE_LIMITS };
 
     // Учитываем бонусы от зданий
     for (const building of this.state.buildings) {
       if (building.state === BUILDING_STATES.DESTROYED) continue;
 
       // Бонус к лимиту юнитов от фабрик
-      if (building instanceof UnitFactoryController) {
+      if (building.isUnitFactory()) {
         this.state.unitLimit += building.unitLimitBonus;
       }
 
       // Бонус к лимиту ресурсов от складов
-      if (building instanceof StorageBuildingController) {
+      if (building.isStorage()) {
         const limits = building.getResourceLimits();
         for (const res in limits) {
           this.state.resourceLimits[res] += limits[res];
@@ -213,8 +244,11 @@ export default class PlayerController {
   }
 
   addUnit(unit) {
+    if (!this.state.units) {
+      this.state.units = [];
+    }
     this.state.units.push(unit);
-    this.checkMissionGoals();
+    return unit;
   }
 
   removeUnit(unit) {
@@ -299,6 +333,11 @@ export default class PlayerController {
 
   // --- Обновление состояния ---
   update(time, delta) {
+    // Восстанавливаем прототипы всех зданий
+    this.state.buildings = this.state.buildings.map(building => 
+      this.restoreBuildingPrototype(building)
+    );
+
     // Обновляем лимит юнитов
     this.state.unitLimit = this.calculateUnitLimit();
 
@@ -335,7 +374,7 @@ export default class PlayerController {
   orderUnit(unitType) {
     // Находим подходящую фабрику для производства
     const factory = this.state.buildings.find(building => 
-      building instanceof UnitFactoryController && 
+      building.isUnitFactory() && 
       building.type.id === unitType.building &&
       building.state !== BUILDING_STATES.CONSTRUCTION
     );
@@ -349,9 +388,7 @@ export default class PlayerController {
   }
 
   getUnitFactories() {
-    return this.state.buildings.filter(
-      building => building instanceof UnitFactoryController
-    );
+    return this.state.buildings.filter(building => building.isUnitFactory());
   }
 
   calculateUnitLimit() {
@@ -412,12 +449,5 @@ export default class PlayerController {
 
   getBuildQueue() {
     return this.state.buildQueue;
-  }
-
-  // --- Управление постройками ---
-  addBuilding(building) {
-    this.state.buildings.push(building);
-    // Обновляем лимиты ресурсов и юнитов при добавлении нового здания
-    this.updateLimits();
   }
 } 

@@ -1,46 +1,65 @@
+import { RESOURCE_TYPES } from '../resources/ResourceTypes.js';
+
 export const UNITS = [
   {
     id: 'worker',
     name: 'Рабочий',
+    class: 'worker',
     color: 0xcccccc,
-    cost: { золото: 30, дерево: 10 },
-    building: 'hq',
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 30,
+      [RESOURCE_TYPES.WOOD]: 10
+    },
+    buildTime: 5,
     vision: 80,
     speed: 80,
     maxHP: 40,
     canAttack: false
   },
   {
-    id: 'soldier',
-    name: 'Солдат',
+    id: 'warrior',
+    name: 'Воин',
+    class: 'combat',
     color: 0xff4444,
-    cost: { золото: 60, металл: 20 },
-    building: 'barracks',
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 60,
+      [RESOURCE_TYPES.METAL]: 20
+    },
+    buildTime: 6,
     vision: 120,
     speed: 80,
     maxHP: 80,
     canAttack: true
   },
   {
-    id: 'tank',
-    name: 'Танк',
+    id: 'archer',
+    name: 'Лучник',
+    class: 'combat',
     color: 0x8888ff,
-    cost: { золото: 120, металл: 60 },
-    building: 'factory',
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 50,
+      [RESOURCE_TYPES.WOOD]: 30
+    },
+    buildTime: 7,
     vision: 140,
-    speed: 60,
-    maxHP: 120,
+    speed: 70,
+    maxHP: 60,
     canAttack: true
   },
   {
-    id: 'scout',
-    name: 'Разведчик',
-    color: 0x00e6e6,
-    cost: { золото: 40, металл: 10 },
-    building: 'barracks',
-    vision: 220,
-    speed: 140,
-    maxHP: 30,
-    canAttack: false
+    id: 'siege',
+    name: 'Осадная машина',
+    class: 'combat',
+    color: 0x8d6e63,
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 120,
+      [RESOURCE_TYPES.METAL]: 60,
+      [RESOURCE_TYPES.WOOD]: 40
+    },
+    buildTime: 10,
+    vision: 100,
+    speed: 50,
+    maxHP: 160,
+    canAttack: true
   }
 ]; 
