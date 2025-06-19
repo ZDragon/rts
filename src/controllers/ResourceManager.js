@@ -1,11 +1,8 @@
+import { DEFAULT_STARTING_RESOURCES } from '../entities/resources/ResourceTypes.js';
+
 class ResourceManager {
   constructor() {
-    this.defaultResources = {
-      золото: 10000,
-      дерево: 500,
-      камень: 300,
-      металл: 100,
-    };
+    this.defaultResources = DEFAULT_STARTING_RESOURCES;
     this.reset();
   }
 
@@ -42,5 +39,4 @@ class ResourceManager {
   }
 }
 
-const resourceManager = new ResourceManager();
-export default resourceManager; 
+export default new ResourceManager(); 

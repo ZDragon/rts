@@ -2,6 +2,7 @@
 // Модуль логики ИИ противника для RTS
 import PathfindingController from '../controllers/PathfindingController.js';
 import AIStrategist from './AIStrategist.js';
+import { DEFAULT_AI_STARTING_RESOURCES } from '../entities/resources/ResourceTypes.js';
 
 export default class AIEnemy {
   constructor(scene, base) {
@@ -9,7 +10,7 @@ export default class AIEnemy {
     this.base = base;   // {x, y, rect, label}
     this.pathfinder = new PathfindingController();
     // Передаём стартовые ресурсы в стратегa
-    this.strategist = new AIStrategist(scene, this, { золото: 500, дерево: 300, камень: 200, металл: 100 });
+    this.strategist = new AIStrategist(scene, this, DEFAULT_AI_STARTING_RESOURCES);
   }
 
   update(dt, time) {

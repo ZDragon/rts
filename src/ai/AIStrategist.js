@@ -2,9 +2,10 @@ import AIBaseBuildingController from './AIBaseBuildingController.js';
 import AIUnitsController from './AIUnitsController.js';
 import { BUILDINGS } from '../entities/buildings/Buildings.js';
 import { UNITS } from '../entities/units/Units.js';
+import { DEFAULT_AI_STARTING_RESOURCES } from '../entities/resources/ResourceTypes.js';
 
 export default class AIStrategist {
-  constructor(scene, ai, startResources = { золото: 500, дерево: 300, камень: 200, металл: 100 }) {
+  constructor(scene, ai, startResources = DEFAULT_AI_STARTING_RESOURCES) {
     this.scene = scene;
     this.ai = ai;
     this.buildings = new AIBaseBuildingController(scene, this);
@@ -56,6 +57,7 @@ export default class AIStrategist {
     const queue = this.buildings.buildQueue || [];
     const countUnits = id => units.filter(u => u.type.id === id).length;
     const countBuildings = id => buildings.filter(b => b.type?.id === id || b.type === id).length + queue.filter(b => b.type === id || b.type?.id === id).length;
+    const countWorkers = countUnits('worker');
     // Оцениваем угрозу: если рядом с базой есть вражеские юниты или мало защитных построек/юнитов
     let threat = false;
     let enemyNear = false;
@@ -73,7 +75,7 @@ export default class AIStrategist {
     const soldiers = countUnits('soldier');
     const tanks = countUnits('tank');
     const towers = countBuildings('tower');
-    if (enemyNear || (soldiers + tanks < 3 && towers < 1)) {
+    if (countWorkers > 1 && (enemyNear || (soldiers + tanks < 3 && towers < 1))) {
       this.priority = 'defense';
       this.status = enemyNear ? 'Враг у базы! Защита!' : 'Укрепление обороны';
     } else {

@@ -1,3 +1,5 @@
+import { RESOURCE_TYPES } from '../entities/resources/ResourceTypes.js';
+
 // 0 — трава, 1 — вода, 2 — камень, 3 — песок
 export const MAPS = [
   // Миссия 1: большая поляна, по краям лес, озеро внизу, песок справа
@@ -12,35 +14,35 @@ export const MAPS = [
     playerBases: [{x: 20, y: 20}],
     enemyBases: [{x: 80, y: 80}],
     resources: [
-      {type: 'золото', x: 25, y: 25, amount: 500},
-      {type: 'дерево', x: 22, y: 28, amount: 400},
-      {type: 'камень', x: 35, y: 22, amount: 300},
-      {type: 'металл', x: 28, y: 35, amount: 200},
-      {type: 'золото', x: 75, y: 75, amount: 500},
-      {type: 'дерево', x: 78, y: 72, amount: 400},
-      {type: 'камень', x: 65, y: 82, amount: 300},
-      {type: 'металл', x: 72, y: 65, amount: 200},
+      {type: RESOURCE_TYPES.GOLD, x: 25, y: 25, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 22, y: 28, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 35, y: 22, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 28, y: 35, amount: 200},
+      {type: RESOURCE_TYPES.GOLD, x: 75, y: 75, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 78, y: 72, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 65, y: 82, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 72, y: 65, amount: 200},
     ],
   },
-  // Миссия 2: река по центру с изгибом, старт слева, острова из песка
+  // Миссия 2: горная местность с озерами
   {
     tileData: Array.from({length: 100}, (_, y) => Array.from({length: 100}, (_, x) =>
-      (x > 45 && x < 55 && y > 10 && y < 90 && Math.abs(Math.sin(y/15)*10 + 50 - x) < 6) ? 1 : // река
-      ((x-20)**2 + (y-20)**2 < 36 || (x-80)**2 + (y-80)**2 < 49) ? 3 : // песчаные острова
-      (x < 10 || y < 10 || x > 90 || y > 90) ? 2 : // камень по краям
-      0
+      Math.random() < 0.1 ? 1 : // случайные озера
+      Math.random() < 0.3 ? 2 : // много камня
+      Math.random() < 0.1 ? 3 : // немного песка
+      0 // в основном трава
     )),
-    playerBases: [{x: 10, y: 50}],
-    enemyBases: [{x: 90, y: 50}, {x: 50, y: 90}],
+    playerBases: [{x: 20, y: 80}],
+    enemyBases: [{x: 80, y: 20}],
     resources: [
-      {type: 'золото', x: 15, y: 55, amount: 600},
-      {type: 'дерево', x: 18, y: 45, amount: 400},
-      {type: 'камень', x: 30, y: 20, amount: 350},
-      {type: 'металл', x: 25, y: 60, amount: 250},
-      {type: 'золото', x: 85, y: 55, amount: 600},
-      {type: 'дерево', x: 82, y: 45, amount: 400},
-      {type: 'камень', x: 70, y: 80, amount: 350},
-      {type: 'металл', x: 75, y: 60, amount: 250},
+      {type: RESOURCE_TYPES.GOLD, x: 30, y: 70, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 25, y: 75, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 35, y: 65, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 28, y: 72, amount: 200},
+      {type: RESOURCE_TYPES.GOLD, x: 70, y: 30, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 75, y: 25, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 65, y: 35, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 72, y: 28, amount: 200},
     ],
   },
   // Миссия 3: озеро по центру, стартовые зоны по углам, песчаные пляжи вокруг озера
@@ -55,14 +57,14 @@ export const MAPS = [
     playerBases: [{x: 10, y: 10}],
     enemyBases: [{x: 90, y: 90}, {x: 10, y: 90}, {x: 90, y: 10}],
     resources: [
-      {type: 'золото', x: 20, y: 20, amount: 500},
-      {type: 'дерево', x: 15, y: 25, amount: 400},
-      {type: 'камень', x: 25, y: 15, amount: 300},
-      {type: 'металл', x: 18, y: 28, amount: 200},
-      {type: 'золото', x: 80, y: 80, amount: 500},
-      {type: 'дерево', x: 85, y: 75, amount: 400},
-      {type: 'камень', x: 75, y: 85, amount: 300},
-      {type: 'металл', x: 82, y: 78, amount: 200},
+      {type: RESOURCE_TYPES.GOLD, x: 20, y: 20, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 15, y: 25, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 25, y: 15, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 18, y: 28, amount: 200},
+      {type: RESOURCE_TYPES.GOLD, x: 80, y: 80, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 85, y: 75, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 75, y: 85, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 82, y: 78, amount: 200},
     ],
   },
   // Миссия 4: лабиринт из камня, поляны с песком, вода в центре
@@ -76,14 +78,14 @@ export const MAPS = [
     playerBases: [{x: 15, y: 85}],
     enemyBases: [{x: 85, y: 15}, {x: 85, y: 85}],
     resources: [
-      {type: 'золото', x: 20, y: 80, amount: 500},
-      {type: 'дерево', x: 18, y: 75, amount: 400},
-      {type: 'камень', x: 25, y: 85, amount: 300},
-      {type: 'металл', x: 28, y: 78, amount: 200},
-      {type: 'золото', x: 80, y: 20, amount: 500},
-      {type: 'дерево', x: 82, y: 25, amount: 400},
-      {type: 'камень', x: 75, y: 15, amount: 300},
-      {type: 'металл', x: 78, y: 28, amount: 200},
+      {type: RESOURCE_TYPES.GOLD, x: 20, y: 80, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 18, y: 75, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 25, y: 85, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 28, y: 78, amount: 200},
+      {type: RESOURCE_TYPES.GOLD, x: 80, y: 20, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 82, y: 25, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 75, y: 15, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 78, y: 28, amount: 200},
     ],
   },
   // Миссия 5: архипелаг — острова из травы и песка, между ними вода, камень по краям
@@ -97,14 +99,14 @@ export const MAPS = [
     playerBases: [{x: 25, y: 25}],
     enemyBases: [{x: 75, y: 75}, {x: 25, y: 75}, {x: 75, y: 25}],
     resources: [
-      {type: 'золото', x: 30, y: 30, amount: 500},
-      {type: 'дерево', x: 28, y: 32, amount: 400},
-      {type: 'камень', x: 32, y: 28, amount: 300},
-      {type: 'металл', x: 35, y: 35, amount: 200},
-      {type: 'золото', x: 70, y: 70, amount: 500},
-      {type: 'дерево', x: 72, y: 68, amount: 400},
-      {type: 'камень', x: 68, y: 72, amount: 300},
-      {type: 'металл', x: 65, y: 65, amount: 200},
+      {type: RESOURCE_TYPES.GOLD, x: 30, y: 30, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 28, y: 32, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 32, y: 28, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 35, y: 35, amount: 200},
+      {type: RESOURCE_TYPES.GOLD, x: 70, y: 70, amount: 500},
+      {type: RESOURCE_TYPES.WOOD, x: 72, y: 68, amount: 400},
+      {type: RESOURCE_TYPES.STONE, x: 68, y: 72, amount: 300},
+      {type: RESOURCE_TYPES.METAL, x: 65, y: 65, amount: 200},
     ],
   },
 ]; 

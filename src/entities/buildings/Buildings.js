@@ -1,18 +1,24 @@
+import { RESOURCE_TYPES } from '../resources/ResourceTypes.js';
+
 export const BUILDINGS = [
   {
     id: 'hq',
     name: 'Штаб',
     type: 'storage',
     color: 0x1976d2,
-    cost: { gold: 100, wood: 50, stone: 30 },
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 100,
+      [RESOURCE_TYPES.WOOD]: 50,
+      [RESOURCE_TYPES.STONE]: 30
+    },
     buildTime: 5, // секунд
     size: 2, // 2x2 тайла
     maxHP: 1000,
     resourceLimits: {
-      wood: 300,
-      stone: 300,
-      gold: 300,
-      food: 300
+      [RESOURCE_TYPES.GOLD]: 300,
+      [RESOURCE_TYPES.WOOD]: 300,
+      [RESOURCE_TYPES.STONE]: 300,
+      [RESOURCE_TYPES.METAL]: 300
     }
   },
   {
@@ -20,7 +26,11 @@ export const BUILDINGS = [
     name: 'Казармы',
     type: 'unitFactory',
     color: 0x388e3c,
-    cost: { gold: 60, wood: 40, stone: 20 },
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 60,
+      [RESOURCE_TYPES.WOOD]: 40,
+      [RESOURCE_TYPES.STONE]: 20
+    },
     buildTime: 4,
     size: 2,
     maxHP: 600,
@@ -33,15 +43,19 @@ export const BUILDINGS = [
     name: 'Склад',
     type: 'storage',
     color: 0xfbc02d,
-    cost: { gold: 40, wood: 80, stone: 20 },
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 40,
+      [RESOURCE_TYPES.WOOD]: 80,
+      [RESOURCE_TYPES.STONE]: 20
+    },
     buildTime: 3,
     size: 2,
     maxHP: 400,
     resourceLimits: {
-      wood: 200,
-      stone: 200,
-      gold: 200,
-      food: 200
+      [RESOURCE_TYPES.GOLD]: 200,
+      [RESOURCE_TYPES.WOOD]: 200,
+      [RESOURCE_TYPES.STONE]: 200,
+      [RESOURCE_TYPES.METAL]: 200
     }
   },
   {
@@ -49,7 +63,11 @@ export const BUILDINGS = [
     name: 'Завод',
     type: 'unitFactory',
     color: 0x8d6e63,
-    cost: { gold: 80, wood: 30, stone: 40 },
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 80,
+      [RESOURCE_TYPES.WOOD]: 30,
+      [RESOURCE_TYPES.STONE]: 40
+    },
     buildTime: 6,
     size: 3,
     maxHP: 800,
@@ -61,7 +79,12 @@ export const BUILDINGS = [
     id: 'tower',
     name: 'Башня',
     color: 0x7b1fa2,
-    cost: { золото: 50, дерево: 20, камень: 40, металл: 15 },
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 50,
+      [RESOURCE_TYPES.WOOD]: 20,
+      [RESOURCE_TYPES.STONE]: 40,
+      [RESOURCE_TYPES.METAL]: 15
+    },
     buildTime: 3,
     size: 1,
   },
@@ -70,7 +93,11 @@ export const BUILDINGS = [
     name: 'Лаборатория',
     type: 'research',
     color: 0x7b1fa2,
-    cost: { gold: 120, wood: 40, stone: 60 },
+    cost: {
+      [RESOURCE_TYPES.GOLD]: 120,
+      [RESOURCE_TYPES.WOOD]: 40,
+      [RESOURCE_TYPES.STONE]: 60
+    },
     buildTime: 8,
     size: 2,
     maxHP: 500,

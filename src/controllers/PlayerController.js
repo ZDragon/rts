@@ -3,6 +3,7 @@ import { UNITS } from '../entities/units/Units.js';
 import { BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController, BUILDING_STATES } from '../entities/buildings/BuildingController.js';
 import PlayerUnitsController from '../entities/units/PlayerUnits.js';
 import { BaseUnit, WorkerUnit, CombatUnit, UNIT_STATES } from '../entities/units/BaseUnit.js';
+import { DEFAULT_STARTING_RESOURCES, DEFAULT_RESOURCE_LIMITS } from '../entities/resources/ResourceTypes.js';
 
 export default class PlayerController {
   constructor(scene) {
@@ -13,16 +14,8 @@ export default class PlayerController {
     
     // Состояние игрока
     this.state = {
-      resources: {
-        золото: 200,
-        дерево: 100,
-        металл: 50
-      },
-      resourceLimits: {
-        золото: 1000,
-        дерево: 500,
-        металл: 300
-      },
+      resources: { ...DEFAULT_STARTING_RESOURCES },
+      resourceLimits: { ...DEFAULT_RESOURCE_LIMITS },
       buildings: [],
       units: [],
       unitLimit: 10, // Базовый лимит юнитов
@@ -419,5 +412,12 @@ export default class PlayerController {
 
   getBuildQueue() {
     return this.state.buildQueue;
+  }
+
+  // --- Управление постройками ---
+  addBuilding(building) {
+    this.state.buildings.push(building);
+    // Обновляем лимиты ресурсов и юнитов при добавлении нового здания
+    this.updateLimits();
   }
 } 
