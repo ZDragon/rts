@@ -1,7 +1,7 @@
 import AIBaseBuildingController from './AIBaseBuildingController.js';
 import AIUnitsController from './AIUnitsController.js';
-import { BUILDINGS } from './Buildings.js';
-import { UNITS } from './Units.js';
+import { BUILDINGS } from '../entities/buildings/Buildings.js';
+import { UNITS } from '../entities/units/Units.js';
 
 export default class AIStrategist {
   constructor(scene, ai, startResources = { золото: 500, дерево: 300, камень: 200, металл: 100 }) {

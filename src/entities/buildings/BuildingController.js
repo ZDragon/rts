@@ -1,7 +1,7 @@
-import { BaseUnit, WorkerUnit, CombatUnit } from './BaseUnit.js';
+import { BaseUnit, WorkerUnit, CombatUnit } from '../units/BaseUnit.js';
 
 // Состояния здания
-const BUILDING_STATES = {
+export const BUILDING_STATES = {
   CONSTRUCTION: 'construction',
   IDLE: 'idle',
   PRODUCING: 'producing',
@@ -16,7 +16,7 @@ const BUILDING_ICONS = {
 };
 
 // Базовый класс для всех зданий
-class BuildingController {
+export class BuildingController {
   constructor(scene, x, y, buildingType) {
     this.scene = scene;
     this.x = x;

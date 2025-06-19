@@ -1,15 +1,15 @@
 import Phaser from 'phaser';
-import resourceManager from '../logic/ResourceManager.js';
-import { BUILDINGS } from '../logic/Buildings.js';
-import { UNITS } from '../logic/Units.js';
-import { MAPS } from '../logic/Maps.js';
-import ResourceGathering from '../logic/ResourceGathering.js';
-import AIEnemy from '../logic/AI.js';
-import PlayerUnitsController from '../logic/PlayerUnits.js';
-import ResourceDeposit from '../logic/ResourceDeposit.js';
-import MinimapController from '../logic/MinimapController.js';
-import PlayerController from '../logic/PlayerController.js';
-import {BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController} from '../logic/BuildingController.js';
+import resourceManager from '../controllers/ResourceManager.js';
+import { BUILDINGS } from '../entities/buildings/Buildings.js';
+import { UNITS } from '../entities/units/Units.js';
+import { MAPS } from '../maps/Maps.js';
+import ResourceGathering from '../entities/resources/ResourceGathering.js';
+import AIEnemy from '../ai/AI.js';
+import PlayerUnitsController from '../entities/units/PlayerUnits.js';
+import ResourceDeposit from '../entities/resources/ResourceDeposit.js';
+import MinimapController from '../controllers/MinimapController.js';
+import PlayerController from '../controllers/PlayerController.js';
+import {BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController} from '../entities/buildings/BuildingController.js';
 
 const TILE_SIZE = 32;
 const MAP_SIZE = 100;
@@ -559,7 +559,7 @@ export default class MissionScene extends Phaser.Scene {
       group, rect, border, label, barBg, barFg, buildText
     };
     this.buildQueue.push(buildingObj);
-    this.playerController.state.buildQueue.push(buildingObj);
+    this.playerController.addToBuildQueue(buildingObj);
   }
   updateBuildQueue(dt) {
     for (const b of this.buildQueue) {
@@ -588,6 +588,8 @@ export default class MissionScene extends Phaser.Scene {
         this.buildingsOnMap.push(b);
         // Добавляем здание в контроллер
         this.playerController.addBuilding(b);
+        // Удаляем из очереди строительства в контроллере
+        this.playerController.removeFromBuildQueue(b);
       }
     }
     // Оставляем в очереди только строящиеся здания

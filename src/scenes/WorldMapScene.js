@@ -1,5 +1,5 @@
 import Phaser from 'phaser';
-import resourceManager from '../logic/ResourceManager.js';
+import resourceManager from '../controllers/ResourceManager.js';
 
 export default class WorldMapScene extends Phaser.Scene {
   constructor() {

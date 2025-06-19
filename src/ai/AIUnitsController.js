@@ -1,4 +1,4 @@
-import BotUnit, { BotScout, BotWorker, BotSoldier, BotTank } from './BotUnit.js';
+import BotUnit, { BotScout, BotWorker, BotSoldier, BotTank } from '../entities/units/BotUnit.js';
 
 export default class AIUnitsController {
   constructor(scene, strategist) {

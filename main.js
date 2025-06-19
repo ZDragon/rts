@@ -1,9 +1,9 @@
 import Phaser from 'phaser';
-import SplashScene from './scenes/SplashScene.js';
-import MainMenuScene from './scenes/MainMenuScene.js';
-import HubScene from './scenes/HubScene.js';
-import WorldMapScene from './scenes/WorldMapScene.js';
-import MissionScene from './scenes/MissionScene.js';
+import SplashScene from './src/scenes/SplashScene.js';
+import MainMenuScene from './src/scenes/MainMenuScene.js';
+import HubScene from './src/scenes/HubScene.js';
+import WorldMapScene from './src/scenes/WorldMapScene.js';
+import MissionScene from './src/scenes/MissionScene.js';
 
 const config = {
   type: Phaser.AUTO,

@@ -1,4 +1,4 @@
-import PathfindingController from './PathfindingController.js';
+import PathfindingController from '../../controllers/PathfindingController.js';
 
 export default class BotUnit {
   constructor({ x, y, type, scene, owner }) {

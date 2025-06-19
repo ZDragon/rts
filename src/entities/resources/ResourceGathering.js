@@ -1,7 +1,7 @@
 // ResourceGathering.js
 // Управляет логикой добычи ресурсов рабочими
 
-import resourceManager from './ResourceManager.js';
+import resourceManager from '../../controllers/ResourceManager.js';
 import ResourceDeposit from './ResourceDeposit.js';
 
 export default class ResourceGathering {

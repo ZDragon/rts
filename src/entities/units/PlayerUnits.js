@@ -2,7 +2,7 @@
 // Контроллер управления юнитами игрока
 
 const TILE_SIZE = 32;
-import PathfindingController from './PathfindingController.js';
+import PathfindingController from '../../controllers/PathfindingController.js';
 
 export default class PlayerUnitsController {
   constructor(scene) {

@@ -1,8 +1,8 @@
-import { BUILDINGS } from './Buildings.js';
-import { UNITS } from './Units.js';
-import { BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController, BUILDING_STATES } from './BuildingController.js';
-import PlayerUnitsController from './PlayerUnits.js';
-import { BaseUnit, WorkerUnit, CombatUnit, UNIT_STATES } from './BaseUnit.js';
+import { BUILDINGS } from '../entities/buildings/Buildings.js';
+import { UNITS } from '../entities/units/Units.js';
+import { BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController, BUILDING_STATES } from '../entities/buildings/BuildingController.js';
+import PlayerUnitsController from '../entities/units/PlayerUnits.js';
+import { BaseUnit, WorkerUnit, CombatUnit, UNIT_STATES } from '../entities/units/BaseUnit.js';
 
 export default class PlayerController {
   constructor(scene) {
@@ -27,7 +27,8 @@ export default class PlayerController {
       units: [],
       unitLimit: 10, // Базовый лимит юнитов
       researched: new Set(),
-      selectedUnits: []
+      selectedUnits: [],
+      buildQueue: [] // Добавляем очередь строительства
     };
     
     // Контроллеры
@@ -402,5 +403,21 @@ export default class PlayerController {
         worker.startGathering(resource, deposit);
       }
     });
+  }
+
+  // --- Управление очередью строительства ---
+  addToBuildQueue(buildingObj) {
+    this.state.buildQueue.push(buildingObj);
+  }
+
+  removeFromBuildQueue(buildingObj) {
+    const index = this.state.buildQueue.indexOf(buildingObj);
+    if (index !== -1) {
+      this.state.buildQueue.splice(index, 1);
+    }
+  }
+
+  getBuildQueue() {
+    return this.state.buildQueue;
   }
 } 

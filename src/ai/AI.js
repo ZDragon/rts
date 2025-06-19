@@ -1,6 +1,6 @@
 // logic/AI.js
 // Модуль логики ИИ противника для RTS
-import PathfindingController from './PathfindingController.js';
+import PathfindingController from '../controllers/PathfindingController.js';
 import AIStrategist from './AIStrategist.js';
 
 export default class AIEnemy {
