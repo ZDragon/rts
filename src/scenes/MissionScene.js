@@ -285,27 +285,12 @@ export default class MissionScene extends Phaser.Scene {
       }
     });
 
-    // --- Контроллер управления юнитами игрока ---
-    this.playerUnitsController = new PlayerUnitsController(this);
-
-    // Изменяем обработчик ПКМ: если выбран рабочий и клик по ресурсу — назначить задачу добычи
+    // Обработчик ПКМ для управления юнитами
     this.input.on('pointerdown', (pointer) => {
       if (pointer.rightButtonDown() && this.selectedUnits.length > 0) {
         const worldPoint = pointer.positionToCamera(this.cameras.main);
-        // Проверка: клик по ресурсу
-        const resourceObj = this.resourceDeposits.find(r => Phaser.Math.Distance.Between(worldPoint.x, worldPoint.y, r.circ.x, r.circ.y) < TILE_SIZE);
-        if (resourceObj) {
-          this.selectedUnits.forEach(u => {
-            if (u.type.id === 'worker') {
-              this.resourceGathering.assignGatherTask(u, resourceObj);
-            }
-          });
-          return;
-        }
-        // Управление атакой и перемещением через контроллер
-        if (!this.playerUnitsController.handleRightClick(worldPoint, this.selectedUnits)) {
-          this.playerUnitsController.moveGroupTo(this.selectedUnits, worldPoint.x, worldPoint.y);
-        }
+        // Вся логика обработки правого клика теперь в контроллере игрока
+        this.playerController.handleRightClick(worldPoint, this.selectedUnits);
       }
     });
 
@@ -347,9 +332,6 @@ export default class MissionScene extends Phaser.Scene {
     // Превью здания под мышью
     this.updateBuildPreview();
     this.updateBuildQueueUI();
-
-    // Перемещение и атака юнитов игрока
-    this.playerUnitsController.update(delta / 1000);
 
     // Снятие выделения по клику на пустое место
     if (this.input.activePointer.leftButtonDown() && !this.isSelecting && !this.selectedBuilding && !this.isDragging) {

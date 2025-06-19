@@ -24,9 +24,6 @@ export default class PlayerController {
       buildQueue: [] // Добавляем очередь строительства
     };
     
-    // Контроллеры
-    this.unitsController = new PlayerUnitsController(scene);
-    
     // Инициализация
     this.initResources();
   }
@@ -114,7 +111,6 @@ export default class PlayerController {
   // Переопределяем геттер для зданий
   getBuildingsByType(type) {
     return this.state.buildings
-      .map(building => this.restoreBuildingPrototype(building))
       .filter(b => b.type.id === type);
   }
 
@@ -453,5 +449,122 @@ export default class PlayerController {
 
     // Добавляем здание
     this.addBuilding(building);
+  }
+
+  // --- Обработка правого клика ---
+  handleRightClick(worldPoint, selectedUnits) {
+    if (!selectedUnits || selectedUnits.length === 0) {
+      return;
+    }
+
+    // Определяем цель клика
+    const target = this.analyzeClickTarget(worldPoint);
+    
+    // Выполняем действия в зависимости от типа цели и юнитов
+    switch (target.type) {
+      case 'resource':
+        // Только рабочие могут добывать ресурсы
+        const workers = selectedUnits.filter(unit => unit.type.id === 'worker');
+        if (workers.length > 0) {
+          this.orderWorkersToGather(workers, target.resourceType, target.object);
+          this.scene.showMessage(`Рабочие направлены к ${target.resourceType}`);
+        }
+        break;
+        
+      case 'enemy_unit':
+        // Только боевые юниты могут атаковать
+        const combatUnits = selectedUnits.filter(unit => unit.type.canAttack);
+        if (combatUnits.length > 0) {
+          this.orderUnitsToAttack(combatUnits, target.object);
+          this.scene.showMessage(`Атакуем вражеский юнит`);
+        }
+        break;
+        
+      case 'enemy_building':
+        // Только боевые юниты могут атаковать здания
+        const attackers = selectedUnits.filter(unit => unit.type.canAttack);
+        if (attackers.length > 0) {
+          this.orderUnitsToAttack(attackers, target.object);
+          this.scene.showMessage(`Атакуем вражеское здание`);
+        }
+        break;
+        
+      case 'empty':
+      default:
+        // Все юниты могут двигаться к точке
+        this.moveUnits(selectedUnits, worldPoint);
+        this.scene.showMessage(`Юниты направлены к точке`);
+        break;
+    }
+  }
+
+  // Анализ цели клика
+  analyzeClickTarget(worldPoint) {
+    const CLICK_RADIUS = 32; // Радиус для определения клика по объекту
+    
+    // Проверяем клик по ресурсам
+    if (this.scene.resourceDeposits) {
+      for (const resource of this.scene.resourceDeposits) {
+        const distance = Phaser.Math.Distance.Between(
+          worldPoint.x, worldPoint.y,
+          resource.circ.x, resource.circ.y
+        );
+        if (distance < CLICK_RADIUS) {
+          return {
+            type: 'resource',
+            object: resource,
+            resourceType: resource.type
+          };
+        }
+      }
+    }
+
+    // Проверяем клик по вражеским юнитам
+    if (this.scene.aiEnemies) {
+      for (const ai of this.scene.aiEnemies) {
+        const enemyUnits = ai.strategist.getAllUnits();
+        for (const enemyUnit of enemyUnits) {
+          const distance = Phaser.Math.Distance.Between(
+            worldPoint.x, worldPoint.y,
+            enemyUnit.x, enemyUnit.y
+          );
+          if (distance < CLICK_RADIUS) {
+            return {
+              type: 'enemy_unit',
+              object: enemyUnit
+            };
+          }
+        }
+      }
+    }
+
+    // Проверяем клик по вражеским зданиям
+    if (this.scene.aiEnemies) {
+      for (const ai of this.scene.aiEnemies) {
+        const enemyBuildings = ai.strategist.getAllBuildings();
+        for (const enemyBuilding of enemyBuildings) {
+          // Проверяем попадание в область здания
+          const buildingX = enemyBuilding.x * 32; // TILE_SIZE
+          const buildingY = enemyBuilding.y * 32;
+          const buildingSize = enemyBuilding.type.size * 32;
+          
+          if (worldPoint.x >= buildingX && 
+              worldPoint.x < buildingX + buildingSize &&
+              worldPoint.y >= buildingY && 
+              worldPoint.y < buildingY + buildingSize) {
+            return {
+              type: 'enemy_building',
+              object: enemyBuilding
+            };
+          }
+        }
+      }
+    }
+
+    // Если ничего не найдено - это пустая точка
+    return {
+      type: 'empty',
+      position: worldPoint
+    };
   }
 } 
