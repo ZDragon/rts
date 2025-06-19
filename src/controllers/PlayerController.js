@@ -103,46 +103,12 @@ export default class PlayerController {
   }
 
   addBuilding(building) {
-    // Проверяем, что здание имеет правильный прототип
-    if (!(building instanceof BuildingController)) {
-      console.warn('Попытка добавить здание без правильного прототипа:', building);
-      return;
-    }
-
     // Добавляем здание в массив
     if (!this.state.buildings) {
       this.state.buildings = [];
     }
     
-    // Сохраняем тип здания для восстановления прототипа
-    building._controllerType = building.constructor.name;
-    
     this.state.buildings.push(building);
-    
-    // Обновляем лимиты после добавления здания
-    this.updateLimits();
-  }
-
-  // Метод для восстановления прототипа здания
-  restoreBuildingPrototype(building) {
-    if (!building._controllerType) return building;
-
-    let restoredBuilding;
-    switch (building._controllerType) {
-      case 'StorageBuildingController':
-        Object.setPrototypeOf(building, StorageBuildingController.prototype);
-        break;
-      case 'UnitFactoryController':
-        Object.setPrototypeOf(building, UnitFactoryController.prototype);
-        break;
-      case 'ResearchLabController':
-        Object.setPrototypeOf(building, ResearchLabController.prototype);
-        break;
-      default:
-        Object.setPrototypeOf(building, BuildingController.prototype);
-    }
-    
-    return building;
   }
 
   // Переопределяем геттер для зданий
@@ -166,7 +132,7 @@ export default class PlayerController {
 
     // Учитываем бонусы от зданий
     for (const building of this.state.buildings) {
-      if (building.state === BUILDING_STATES.DESTROYED) continue;
+      if (building.state === BUILDING_STATES.DESTROYED || building.state === BUILDING_STATES.CONSTRUCTION) continue;
 
       // Бонус к лимиту юнитов от фабрик
       if (building.isUnitFactory()) {
@@ -333,17 +299,6 @@ export default class PlayerController {
 
   // --- Обновление состояния ---
   update(time, delta) {
-    // Восстанавливаем прототипы всех зданий
-    this.state.buildings = this.state.buildings.map(building => 
-      this.restoreBuildingPrototype(building)
-    );
-
-    // Обновляем лимит юнитов
-    this.state.unitLimit = this.calculateUnitLimit();
-
-    // Обновляем состояние целей, зависящих от времени
-    this.checkMissionGoals();
-    
     // Обновляем состояние построек
     for (const building of this.state.buildings) {
       if (building.update) building.update(time, delta);
@@ -357,7 +312,6 @@ export default class PlayerController {
     // Удаляем мертвых юнитов
     this.state.units = this.state.units.filter(unit => {
       if (unit.state === UNIT_STATES.DEAD) {
-        // Удаляем из выбранных, если был выбран
         const selectedIndex = this.state.selectedUnits.indexOf(unit);
         if (selectedIndex !== -1) {
           this.state.selectedUnits.splice(selectedIndex, 1);
@@ -369,6 +323,8 @@ export default class PlayerController {
 
     // Обновляем отображение ресурсов
     this.updateResourceDisplay();
+    // Обновляем лимиты после добавления здания
+    this.updateLimits();
   }
 
   orderUnit(unitType) {
@@ -448,6 +404,54 @@ export default class PlayerController {
   }
 
   getBuildQueue() {
-    return this.state.buildQueue;
+    return this.state.buildQueue || [];
+  }
+
+  // Проверка возможности строительства на позиции
+  canBuildHere(x, y, buildingType) {
+    // Проверка границ карты
+    const map = this.scene.tileData;
+    const MAP_SIZE = map.length;
+    const size = buildingType.size;
+    if (x < 0 || y < 0 || x + size > MAP_SIZE || y + size > MAP_SIZE) {
+      return false;
+    }
+    // Проверка типа тайла (например, только на траве)
+    for (let ty = y; ty < y + size; ty++) {
+      for (let tx = x; tx < x + size; tx++) {
+        if (map[ty][tx] !== 0) return false;
+      }
+    }
+    // Проверка пересечений с другими зданиями
+    for (const building of this.state.buildings) {
+      if (building.state === 'destroyed') continue;
+      const bx = building.x, by = building.y, bsize = building.type.size;
+      if (
+        x + size > bx && x < bx + bsize &&
+        y + size > by && y < by + bsize
+      ) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  // --- Управление строительством ---
+  queueBuildingConstruction(x, y, buildingType) {
+    const buildingData = BUILDINGS.find(b => b.id === buildingType);
+    if (!buildingData) {
+      console.warn('Building type not found:', buildingType);
+      return null;
+    }
+
+    const building = BuildingController.createController(
+      this.scene,
+      x,
+      y,
+      buildingData
+    );
+
+    // Добавляем здание
+    this.addBuilding(building);
   }
 } 

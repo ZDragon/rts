@@ -384,8 +384,6 @@ export default class MissionScene extends Phaser.Scene {
     // Обновление миникарты
     this.minimap.update();
 
-    // Обновление очереди строительства
-    this.updateBuildQueue(delta / 1000);
     // Превью здания под мышью
     this.updateBuildPreview();
     this.updateBuildQueueUI();
@@ -507,94 +505,10 @@ export default class MissionScene extends Phaser.Scene {
     return this.playerController.spendResources(building.cost);
   }
   queueBuilding(tileX, tileY, building) {
-    // Создаём контейнер для визуализации
-    const group = this.add.container(0, 0).setDepth(20);
-    // Фон здания
-    const size = building.size * TILE_SIZE;
-    const rect = this.add.rectangle(
-      tileX * TILE_SIZE + size / 2,
-      tileY * TILE_SIZE + size / 2,
-      size, size,
-      building.color
-    ).setAlpha(0.5);
-    // Рамка
-    const border = this.add.rectangle(
-      tileX * TILE_SIZE + size / 2,
-      tileY * TILE_SIZE + size / 2,
-      size, size
-    ).setStrokeStyle(4, 0xffff00).setAlpha(0.7);
-    // Надпись
-    const label = this.add.text(
-      tileX * TILE_SIZE + size / 2,
-      tileY * TILE_SIZE + size / 2,
-      building.name,
-      { fontSize: '16px', color: '#fff', fontFamily: 'sans-serif', align: 'center' }
-    ).setOrigin(0.5).setAlpha(0.7);
-    // Прогресс-бар
-    const barBg = this.add.rectangle(
-      tileX * TILE_SIZE + size / 2,
-      tileY * TILE_SIZE + size - 10,
-      size - 8, 10, 0x444444
-    ).setAlpha(0.7);
-    const barFg = this.add.rectangle(
-      tileX * TILE_SIZE + size / 2,
-      tileY * TILE_SIZE + size - 10,
-      0, 10, 0x00ff00
-    ).setAlpha(0.9);
-    // Надпись "Строится"
-    const buildText = this.add.text(
-      tileX * TILE_SIZE + size / 2,
-      tileY * TILE_SIZE + size / 2 + 16,
-      'Строится...',
-      { fontSize: '14px', color: '#ff0', fontFamily: 'sans-serif' }
-    ).setOrigin(0.5).setAlpha(0.8);
-    group.add([rect, border, label, barBg, barFg, buildText]);
-    const buildingObj = {
-      x: tileX,
-      y: tileY,
-      type: building,
-      timeLeft: building.buildTime,
-      size: building.size,
-      status: 'building',
-      group, rect, border, label, barBg, barFg, buildText
-    };
-    this.buildQueue.push(buildingObj);
-    this.playerController.addToBuildQueue(buildingObj);
+    // Только запрос в контроллер игрока
+    this.playerController.queueBuildingConstruction(tileX, tileY, building.id);
   }
-  updateBuildQueue(dt) {
-    for (const b of this.buildQueue) {
-      b.timeLeft -= dt;
-      // Обновляем прогресс-бар и надписи
-      const progress = 1 - b.timeLeft / b.type.buildTime;
-      b.barFg.width = (b.type.size * TILE_SIZE - 8) * progress;
-      b.barFg.x = b.x * TILE_SIZE + b.type.size * TILE_SIZE / 2 - (b.type.size * TILE_SIZE - 8) / 2 + b.barFg.width / 2;
-      if (b.timeLeft <= 0 && b.status === 'building') {
-        b.status = 'done';
-        // Визуально меняем здание на завершённое
-        b.rect.setAlpha(1);
-        b.border.setStrokeStyle(4, 0x00ff00).setAlpha(1);
-        b.label.setAlpha(1);
-        b.barBg.setVisible(false);
-        b.barFg.setVisible(false);
-        b.buildText.setVisible(false);
-        b.label.setText(b.type.name);
-        // --- Добавляем HP и полоску HP ---
-        b.maxHP = b.type.maxHP || 300;
-        b.hp = b.maxHP;
-        const size = b.type.size * TILE_SIZE;
-        b.hpBarBg = this.add.rectangle(b.x * TILE_SIZE + size / 2, b.y * TILE_SIZE + 8, size - 8, 8, 0x444444).setDepth(22);
-        b.hpBar = this.add.rectangle(b.x * TILE_SIZE + size / 2, b.y * TILE_SIZE + 8, size - 8, 8, 0x00ff00).setDepth(23);
-        // Переносим в массив построенных зданий
-        this.buildingsOnMap.push(b);
-        // Добавляем здание в контроллер
-        this.playerController.addBuilding(b);
-        // Удаляем из очереди строительства в контроллере
-        this.playerController.removeFromBuildQueue(b);
-      }
-    }
-    // Оставляем в очереди только строящиеся здания
-    this.buildQueue = this.buildQueue.filter(b => b.status === 'building');
-  }
+
   updateBuildPreview() {
     if (!this.selectedBuilding) {
       if (this.buildPreview) { this.buildPreview.destroy(); this.buildPreview = null; }
@@ -625,20 +539,25 @@ export default class MissionScene extends Phaser.Scene {
   }
 
   updateBuildQueueUI() {
-    // Очищаем старые элементы
+    // UI очереди: просто отображаем названия и прогресс по данным из контроллера
     this.queueUI.forEach(e => { e.name.destroy(); e.barBg.destroy(); e.barFg.destroy(); });
     this.queueUI = [];
     const startY = 500;
-    this.buildQueue.forEach((b, i) => {
+    const queue = this.playerController.getBuildQueue();
+    queue.forEach((construction, i) => {
       const y = startY + i * 28;
-      // Название здания
-      const name = this.add.text(1120, y, b.type.name, {
+      const name = this.add.text(1120, y, construction.type.name, {
         fontSize: '16px', color: '#fff', fontFamily: 'sans-serif'
       }).setOrigin(0, 0.5).setDepth(151).setScrollFactor(0);
-      // Прогресс-бар
-      const barBg = this.add.rectangle(1270, y, 60, 12, 0x444444).setOrigin(0, 0.5).setDepth(151).setScrollFactor(0);
-      const progress = 1 - b.timeLeft / b.type.buildTime;
-      const barFg = this.add.rectangle(1270, y, 60 * progress, 12, 0x00ff00).setOrigin(0, 0.5).setDepth(152).setScrollFactor(0);
+      const barBg = this.add.rectangle(1270, y, 60, 12, 0x444444)
+        .setOrigin(0, 0.5)
+        .setDepth(151)
+        .setScrollFactor(0);
+      const progress = 1 - construction.timeLeft / construction.type.buildTime;
+      const barFg = this.add.rectangle(1270, y, 60 * progress, 12, 0x00ff00)
+        .setOrigin(0, 0.5)
+        .setDepth(152)
+        .setScrollFactor(0);
       this.queueUI.push({ name, barBg, barFg });
     });
   }
@@ -673,10 +592,6 @@ export default class MissionScene extends Phaser.Scene {
 
     // Проверяем клик по существующему зданию
     const clickedBuilding = this.playerController.state.buildings.find(building => {
-      // Восстанавливаем прототип здания перед проверкой
-      building = building.createController(this, building.x, building.y, building.type);
-      console.log('Тип здания:', building.getBuildingType(), building);
-      
       const buildingX = building.x * TILE_SIZE;
       const buildingY = building.y * TILE_SIZE;
       const buildingSize = building.type.size * TILE_SIZE;

@@ -1,3 +1,5 @@
+import { BUILDING_STATES } from '../entities/buildings/BuildingController.js';
+
 export default class MinimapController {
   constructor(scene) {
     this.scene = scene;
@@ -162,17 +164,62 @@ export default class MinimapController {
     this.viewportRect.setSize(viewWidth, viewHeight);
     
     // Отрисовываем здания
-    if (this.scene.buildingsOnMap) {
-      for (const building of this.scene.buildingsOnMap) {
-        if (!building.type) continue;
-        const color = building.type.color;
+    // --- Здания игрока ---
+    if (this.scene.playerController) {
+      const buildings = this.scene.playerController.state.buildings;
+      for (const building of buildings) {
+        // Пропускаем уничтоженные здания
+        if (building.state === BUILDING_STATES.DESTROYED) continue;
+
+        const color = building.state === BUILDING_STATES.CONSTRUCTION 
+          ? 0xffff00  // желтый для строящихся
+          : building.type.color;
+
         const x = (building.x * 32 / (this.scene.tileData[0].length * 32)) * this.width;
         const y = (building.y * 32 / (this.scene.tileData.length * 32)) * this.height;
-        const width = (building.size * 32 / (this.scene.tileData[0].length * 32)) * this.width;
-        const height = (building.size * 32 / (this.scene.tileData.length * 32)) * this.height;
+        const width = (building.type.size * 32 / (this.scene.tileData[0].length * 32)) * this.width;
+        const height = (building.type.size * 32 / (this.scene.tileData.length * 32)) * this.height;
         
+        // Рисуем здание
         this.unitsLayer.fillStyle(color);
         this.unitsLayer.fillRect(x, y, width, height);
+
+        // Для строящихся зданий добавляем рамку
+        if (building.state === BUILDING_STATES.CONSTRUCTION) {
+          this.unitsLayer.lineStyle(1, 0xffffff);
+          this.unitsLayer.strokeRect(x, y, width, height);
+        }
+      }
+    }
+
+    // --- Здания ИИ ---
+    if (this.scene.aiEnemies) {
+      for (const ai of this.scene.aiEnemies) {
+        if (!ai.strategist) continue;
+        
+        const buildings = ai.strategist.getAllBuildings();
+        for (const building of buildings) {
+          // Пропускаем уничтоженные здания
+          //if (building.state === BUILDING_STATES.DESTROYED) continue;
+
+          // Для зданий ИИ используем более темные оттенки их цветов
+          const baseColor = building.type.color;
+          
+          // Затемняем цвет для зданий ИИ
+          const color = Phaser.Display.Color.IntegerToColor(baseColor);
+          color.red = Math.floor(color.red * 0.7);
+          color.green = Math.floor(color.green * 0.7);
+          color.blue = Math.floor(color.blue * 0.7);
+          
+          const x = (building.x * 32 / (this.scene.tileData[0].length * 32)) * this.width;
+          const y = (building.y * 32 / (this.scene.tileData.length * 32)) * this.height;
+          const width = (building.type.size * 32 / (this.scene.tileData[0].length * 32)) * this.width;
+          const height = (building.type.size * 32 / (this.scene.tileData.length * 32)) * this.height;
+          
+          // Рисуем здание
+          this.unitsLayer.fillStyle(color.color);
+          this.unitsLayer.fillRect(x, y, width, height);
+        }
       }
     }
     

@@ -32,14 +32,16 @@ export class BuildingController {
     this.y = y;
     this.type = buildingType;
     
-    // Базовые параметры
-    this.maxHP = buildingType.maxHP || 300;
-    this.hp = this.maxHP;
-    this.state = BUILDING_STATES.CONSTRUCTION;
-    this.constructionTime = buildingType.buildTime || 10;
-    this.constructionProgress = 0;
+    // Создаем систему частиц
+    this.particles = scene.add.particles('particle');
     
-    // Визуальные элементы
+    // Инициализация состояния
+    this.state = BUILDING_STATES.CONSTRUCTION;
+    this.constructionProgress = 0;
+    this.constructionTime = buildingType.buildTime || 5;
+    this.hp = this.maxHP = buildingType.hp || 100;
+    
+    // Создаем визуальные элементы
     this.createVisuals();
     
     // Анимация строительства
@@ -197,16 +199,6 @@ export class BuildingController {
     this.progressBar.setVisible(false);
     this.progressBarBg.setVisible(false);
 
-    // Частицы для эффектов
-    this.particles = this.scene.add.particles(0, 0, 'pixel', {
-      lifespan: 1000,
-      gravityY: 100,
-      scale: { start: 1, end: 0 },
-      alpha: { start: 1, end: 0 },
-      tint: [this.type.color, 0xffffff],
-      emitting: false
-    }).setDepth(25);
-    
     // Начальное состояние для строительства
     if (this.state === BUILDING_STATES.CONSTRUCTION) {
       this.container.setAlpha(0.7);
@@ -215,7 +207,7 @@ export class BuildingController {
   }
 
   startConstructionAnimation() {
-    // Анимация появления здания
+    // Анимация появления
     this.scene.tweens.add({
       targets: this.container,
       scaleY: { from: 0, to: 1 },
@@ -224,15 +216,15 @@ export class BuildingController {
     });
 
     // Частицы строительства
-    this.constructionEmitter = this.particles.createEmitter({
+    this.constructionParticles = this.particles.emit('particle', {
       x: this.x * 32 + this.type.size * 16,
-      y: this.y * 32 + this.type.size * 32,
+      y: this.y * 32 + this.type.size * 16,
       speed: { min: -50, max: 50 },
-      angle: { min: 240, max: 300 },
-      frequency: 100,
+      scale: { start: 1, end: 0 },
+      blendMode: 'ADD',
       lifespan: 1000,
       quantity: 2,
-      scale: { start: 1, end: 0 },
+      frequency: 100,
       tint: 0xffff00
     });
   }
@@ -270,8 +262,8 @@ export class BuildingController {
     this.border.setStrokeStyle(2, 0xffffff, 0.5);
     
     // Останавливаем частицы строительства
-    if (this.constructionEmitter) {
-      this.constructionEmitter.stop();
+    if (this.constructionParticles) {
+      this.constructionParticles.stop();
     }
 
     // Эффект завершения строительства
@@ -285,17 +277,15 @@ export class BuildingController {
     });
 
     // Вспышка частиц
-    this.particles.createEmitter({
+    this.particles.emit('particle', {
       x: this.x * 32 + this.type.size * 16,
       y: this.y * 32 + this.type.size * 16,
       speed: { min: 50, max: 100 },
-      angle: { min: 0, max: 360 },
       scale: { start: 1, end: 0 },
+      blendMode: 'ADD',
       lifespan: 800,
       quantity: 20,
-      tint: 0xffff00,
-      emitting: false,
-      explode: true
+      tint: 0xffff00
     });
   }
 
@@ -312,17 +302,15 @@ export class BuildingController {
     });
 
     // Частицы повреждения
-    this.particles.createEmitter({
+    this.particles.emit('particle', {
       x: this.x * 32 + this.type.size * 16,
       y: this.y * 32 + this.type.size * 16,
       speed: { min: 50, max: 100 },
-      angle: { min: 0, max: 360 },
       scale: { start: 1, end: 0 },
+      blendMode: 'ADD',
       lifespan: 500,
       quantity: Math.ceil(amount / 10),
-      tint: 0xff0000,
-      emitting: false,
-      explode: true
+      tint: 0xff0000
     });
 
     if (this.hp === 0 && oldHp > 0) {
@@ -334,17 +322,15 @@ export class BuildingController {
     this.state = BUILDING_STATES.DESTROYED;
     
     // Большой взрыв
-    this.particles.createEmitter({
+    this.particles.emit('particle', {
       x: this.x * 32 + this.type.size * 16,
       y: this.y * 32 + this.type.size * 16,
       speed: { min: 100, max: 200 },
-      angle: { min: 0, max: 360 },
       scale: { start: 2, end: 0 },
+      blendMode: 'ADD',
       lifespan: 1000,
       quantity: 50,
-      tint: [0xff0000, 0xff8800, 0xffff00],
-      emitting: false,
-      explode: true
+      tint: [0xff0000, 0xff8800, 0xffff00]
     });
 
     // Анимация разрушения
@@ -369,20 +355,20 @@ export class BuildingController {
     this.progressBarBg.setVisible(true);
     
     // Эффект начала производства
-    this.productionEmitter = this.particles.createEmitter({
+    this.productionParticles = this.particles.emit('particle', {
       x: this.x * 32 + this.type.size * 16,
       y: this.y * 32 + this.type.size * 16,
       speed: { min: 20, max: 40 },
-      angle: { min: 0, max: 360 },
-      frequency: 500,
       scale: { start: 0.5, end: 0 },
+      blendMode: 'ADD',
+      frequency: 500,
       tint: 0x00ffff
     });
   }
 
   stopProduction() {
-    if (this.productionEmitter) {
-      this.productionEmitter.stop();
+    if (this.productionParticles) {
+      this.productionParticles.stop();
     }
     this.state = BUILDING_STATES.IDLE;
     this.progressBar.setVisible(false);
@@ -446,15 +432,15 @@ export class UnitFactoryController extends BuildingController {
     return true;
   }
 
-  update(dt) {
-    super.update(dt);
+  update(time, delta) {
+    super.update(time, delta);
     
     if (this.state !== BUILDING_STATES.IDLE) return;
     
     // Если есть юниты в очереди
     if (this.productionQueue.length > 0) {
       const current = this.productionQueue[0];
-      current.progress += dt;
+      current.progress += delta / 1000;
       
       // Обновляем прогресс-бар
       this.progressBar.setVisible(true);
