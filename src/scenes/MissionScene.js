@@ -603,8 +603,7 @@ export default class MissionScene extends Phaser.Scene {
 
     if (clickedBuilding) {
       // Восстанавливаем прототип перед выбором
-      const restoredBuilding = this.playerController.restoreBuildingPrototype(clickedBuilding);
-      this.selectBuildingInstance(restoredBuilding);
+      this.selectBuildingInstance(clickedBuilding);
     } else {
       this.deselectBuildingInstance();
     }

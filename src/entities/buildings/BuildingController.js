@@ -204,6 +204,79 @@ export class BuildingController {
       this.container.setAlpha(0.7);
       this.border.setStrokeStyle(2, 0xffff00, 1);
     }
+
+    // Создаем контейнер для кнопок улучшений
+    this.upgradePanel = this.scene.add.container(
+      (this.x + this.type.size) * 32 + 10, 
+      this.y * 32
+    );
+    this.upgradePanel.setVisible(false);
+
+    // Фон панели
+    this.upgradePanelBg = this.scene.add.rectangle(
+      0,
+      0,
+      120,
+      32 * this.type.size,
+      0x000000,
+      0.7
+    );
+    this.upgradePanelBg.setOrigin(0, 0);
+    this.upgradePanel.add(this.upgradePanelBg);
+
+    // Создаем кнопки улучшений
+    this.upgradeButtons = [];
+    if (this.type.upgrades) {
+      let yOffset = 10;
+      for (const upgrade of this.type.upgrades) {
+        const button = this.scene.add.container(10, yOffset);
+        
+        // Фон кнопки
+        const buttonBg = this.scene.add.rectangle(0, 0, 100, 30, 0x444444);
+        buttonBg.setOrigin(0, 0);
+        button.add(buttonBg);
+        
+        // Иконка улучшения
+        if (upgrade.icon) {
+          const icon = this.scene.add.image(5, 15, upgrade.icon);
+          icon.setScale(0.8);
+          button.add(icon);
+        }
+        
+        // Текст улучшения
+        const text = this.scene.add.text(35, 8, upgrade.name, {
+          fontSize: '12px',
+          color: '#ffffff'
+        });
+        button.add(text);
+        
+        // Стоимость
+        const cost = this.scene.add.text(35, 20, `${upgrade.cost}`, {
+          fontSize: '10px',
+          color: '#ffff00'
+        });
+        button.add(cost);
+        
+        // Интерактивность
+        buttonBg.setInteractive();
+        buttonBg.on('pointerover', () => {
+          buttonBg.setFillStyle(0x666666);
+        });
+        buttonBg.on('pointerout', () => {
+          buttonBg.setFillStyle(0x444444);
+        });
+        buttonBg.on('pointerdown', () => {
+          if (this.scene.playerController.canAfford(upgrade.cost)) {
+            this.applyUpgrade(upgrade);
+            this.scene.playerController.spendResources(upgrade.cost);
+          }
+        });
+        
+        this.upgradePanel.add(button);
+        this.upgradeButtons.push(button);
+        yOffset += 40;
+      }
+    }
   }
 
   startConstructionAnimation() {
@@ -374,6 +447,78 @@ export class BuildingController {
     this.progressBar.setVisible(false);
     this.progressBarBg.setVisible(false);
     this.border.setStrokeStyle(2, 0xffffff, 0.5);
+  }
+
+  select() {
+    // Подсвечиваем выбранное здание
+    this.border.setStrokeStyle(2, 0xffff00, 1);
+    
+    // Показываем панель улучшений
+    if (this.type.upgrades && this.type.upgrades.length > 0) {
+      this.upgradePanel.setVisible(true);
+      
+      // Обновляем доступность кнопок
+      this.upgradeButtons.forEach((button, index) => {
+        const upgrade = this.type.upgrades[index];
+        const canAfford = this.scene.playerController.canAfford(upgrade.cost);
+        
+        // Визуально отображаем доступность улучшения
+        const buttonBg = button.getAt(0);
+        buttonBg.setFillStyle(canAfford ? 0x444444 : 0x222222);
+        
+        // Обновляем интерактивность
+        if (canAfford) {
+          buttonBg.setInteractive();
+        } else {
+          buttonBg.disableInteractive();
+        }
+      });
+    }
+  }
+
+  deselect() {
+    // Убираем подсветку
+    this.border.setStrokeStyle(2, 0xffffff, 0.5);
+    
+    // Скрываем панель улучшений
+    if (this.upgradePanel) {
+      this.upgradePanel.setVisible(false);
+    }
+  }
+
+  applyUpgrade(upgrade) {
+    // Применяем эффекты улучшения
+    if (upgrade.effects) {
+      for (const [key, value] of Object.entries(upgrade.effects)) {
+        if (typeof this[key] === 'number') {
+          this[key] *= value;
+        } else {
+          this[key] = value;
+        }
+      }
+    }
+
+    // Визуальный эффект применения улучшения
+    this.scene.tweens.add({
+      targets: this.container,
+      scaleX: { from: 1, to: 1.1 },
+      scaleY: { from: 1, to: 1.1 },
+      duration: 200,
+      yoyo: true,
+      ease: 'Quad.easeOut'
+    });
+
+    // Эффект частиц улучшения
+    this.particles.emit('particle', {
+      x: this.x * 32 + this.type.size * 16,
+      y: this.y * 32 + this.type.size * 16,
+      speed: { min: 50, max: 100 },
+      scale: { start: 1, end: 0 },
+      blendMode: 'ADD',
+      lifespan: 800,
+      quantity: 20,
+      tint: 0x00ff00
+    });
   }
 }
 
