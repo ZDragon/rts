@@ -1,3 +1,5 @@
+import { BaseUnit, WorkerUnit, CombatUnit } from './BaseUnit.js';
+
 // Состояния здания
 const BUILDING_STATES = {
   CONSTRUCTION: 'construction',
@@ -363,76 +365,163 @@ export class UnitFactoryController extends BuildingController {
   constructor(scene, x, y, buildingType) {
     super(scene, x, y, buildingType);
     this.productionQueue = [];
-    this.maxQueueSize = 5;
-    this.unitLimitBonus = 5;
-    this.producing = false;
+    this.currentProduction = null;
+    this.productionProgress = 0;
+    this.unitLimit = 5; // Каждая фабрика добавляет 5 к лимиту юнитов
   }
 
   canQueueUnit(unitType) {
-    return this.productionQueue.length < this.maxQueueSize &&
-           this.scene.playerController.hasResources(unitType.cost);
+    return this.state === BUILDING_STATES.IDLE || this.state === BUILDING_STATES.PRODUCING;
   }
 
-  queueUnit(unitType) {
+  queueUnit(unitType, playerController) {
     if (!this.canQueueUnit(unitType)) return false;
     
-    // Списываем ресурсы
-    this.scene.playerController.spendResources(unitType.cost);
-    
+    // Проверяем лимит юнитов
+    if (playerController.state.units.length >= playerController.state.unitLimit) {
+      console.warn('Достигнут лимит юнитов');
+      return false;
+    }
+
+    // Проверяем наличие ресурсов
+    if (!playerController.hasResources(unitType.cost)) {
+      console.warn('Недостаточно ресурсов для создания юнита');
+      return false;
+    }
+
+    // Списываем ресурсы сразу при постановке в очередь
+    playerController.spendResources(unitType.cost);
+
     // Добавляем в очередь
     this.productionQueue.push({
       type: unitType,
       progress: 0,
-      productionTime: unitType.productionTime || 10
+      time: unitType.buildTime || 5
     });
-    
-    if (!this.producing) this.startProduction();
+
+    // Если не производим, начинаем производство
+    if (this.state !== BUILDING_STATES.PRODUCING) {
+      this.startProduction();
+    }
+
     return true;
   }
 
   startProduction() {
-    if (this.productionQueue.length === 0 || this.producing) return;
-    
-    this.producing = true;
-    this.state = BUILDING_STATES.PRODUCING;
-    this.progressBar.setVisible(true);
-    this.progressBarBg.setVisible(true);
+    if (this.productionQueue.length > 0) {
+      this.state = BUILDING_STATES.PRODUCING;
+      this.currentProduction = this.productionQueue[0];
+      this.progressBar.setVisible(true);
+      this.progressBarBg.setVisible(true);
+      
+      // Анимация производства
+      this.sprite.setTint(0xffaa00);
+      this.scene.tweens.add({
+        targets: this.sprite,
+        alpha: { from: 0.7, to: 1 },
+        duration: 500,
+        yoyo: true,
+        repeat: -1
+      });
+    }
   }
 
   update(time, delta) {
     super.update(time, delta);
-    
-    if (this.state !== BUILDING_STATES.PRODUCING || this.productionQueue.length === 0) return;
-    
-    const currentUnit = this.productionQueue[0];
-    currentUnit.progress += delta / 1000;
-    
-    // Обновляем прогресс-бар
-    const progress = currentUnit.progress / currentUnit.productionTime;
-    this.progressBar.width = (this.type.size * 32 - 8) * progress;
-    
-    if (currentUnit.progress >= currentUnit.productionTime) {
-      this.completeUnit(currentUnit);
+
+    if (this.state === BUILDING_STATES.PRODUCING && this.currentProduction) {
+      this.currentProduction.progress += delta / 1000;
+      
+      // Обновляем прогресс-бар
+      const progress = this.currentProduction.progress / this.currentProduction.time;
+      this.progressBar.width = (this.type.size * 32 - 8) * progress;
+
+      if (this.currentProduction.progress >= this.currentProduction.time) {
+        this.completeUnit(this.currentProduction);
+      }
     }
   }
 
-  completeUnit(unit) {
-    // Создаём юнита рядом со зданием
-    this.scene.createUnitNearBuilding(unit.type, this);
-    
+  completeUnit(production) {
+    // Создаем юнита соответствующего типа
+    const spawnX = this.x * 32 + this.type.size * 32 + 32;
+    const spawnY = this.y * 32 + this.type.size * 16;
+
+    let unit;
+    if (production.type.id === 'worker') {
+      unit = new WorkerUnit(this.scene, spawnX, spawnY, production.type);
+    } else if (production.type.canAttack) {
+      unit = new CombatUnit(this.scene, spawnX, spawnY, production.type);
+    } else {
+      unit = new BaseUnit(this.scene, spawnX, spawnY, production.type);
+    }
+
+    // Анимация появления
+    unit.sprite.setScale(0);
+    this.scene.tweens.add({
+      targets: unit.sprite,
+      scale: 1,
+      duration: 300,
+      ease: 'Back.easeOut'
+    });
+
+    // Эффект появления
+    this.particles.createEmitter({
+      x: spawnX,
+      y: spawnY,
+      speed: { min: 50, max: 100 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 1, end: 0 },
+      lifespan: 500,
+      quantity: 10,
+      tint: [0x00ff00, 0xffff00],
+      emitting: false,
+      explode: true
+    });
+
+    // Добавляем юнита в список игрока через параметр playerController
+    const playerController = this.scene.game.playerController;
+    if (playerController) {
+      playerController.state.units.push(unit);
+    } else {
+      console.warn('PlayerController не найден при создании юнита');
+    }
+
     // Удаляем из очереди
     this.productionQueue.shift();
-    
-    if (this.productionQueue.length > 0) {
-      // Начинаем производство следующего
-      this.startProduction();
+    this.currentProduction = null;
+
+    // Сбрасываем прогресс-бар
+    this.progressBar.width = 0;
+
+    // Если очередь пуста, останавливаем производство
+    if (this.productionQueue.length === 0) {
+      this.stopProduction();
     } else {
-      // Очередь пуста
-      this.producing = false;
-      this.state = BUILDING_STATES.IDLE;
-      this.progressBar.setVisible(false);
-      this.progressBarBg.setVisible(false);
+      // Иначе начинаем следующее производство
+      this.startProduction();
     }
+
+    return unit;
+  }
+
+  stopProduction() {
+    this.state = BUILDING_STATES.IDLE;
+    this.currentProduction = null;
+    this.progressBar.setVisible(false);
+    this.progressBarBg.setVisible(false);
+    this.sprite.clearTint();
+    this.scene.tweens.killTweensOf(this.sprite);
+    this.sprite.setAlpha(1);
+  }
+
+  getQueueInfo() {
+    return {
+      current: this.currentProduction?.type.name,
+      progress: this.currentProduction ? 
+        Math.floor(this.currentProduction.progress / this.currentProduction.time * 100) : 0,
+      queue: this.productionQueue.map(item => item.type.name)
+    };
   }
 }
 

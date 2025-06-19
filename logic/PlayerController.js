@@ -1,32 +1,40 @@
-import resourceManager from './ResourceManager.js';
 import { BUILDINGS } from './Buildings.js';
-import { BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController } from './BuildingController.js';
+import { UNITS } from './Units.js';
+import { BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController, BUILDING_STATES } from './BuildingController.js';
+import PlayerUnitsController from './PlayerUnits.js';
+import { BaseUnit, WorkerUnit, CombatUnit, UNIT_STATES } from './BaseUnit.js';
 
 export default class PlayerController {
   constructor(scene) {
+    if (!scene) {
+      throw new Error('PlayerController requires a valid scene');
+    }
     this.scene = scene;
     
     // Состояние игрока
     this.state = {
-      buildings: [],        // Список построек игрока
-      units: [],           // Список юнитов игрока
-      resources: {},       // Текущие ресурсы
-      buildQueue: [],      // Очередь строительства
-      missionGoals: [],    // Цели миссии
-      missionFailed: false, // Флаг провала миссии
-      missionComplete: false, // Флаг выполнения миссии
-      research: new Set(),  // Исследованные улучшения
-      unitLimit: 10,       // Базовый лимит юнитов
-      resourceLimits: {    // Базовые лимиты ресурсов
-        wood: 1000,
-        stone: 1000,
-        gold: 1000,
-        food: 1000
-      }
+      resources: {
+        золото: 200,
+        дерево: 100,
+        металл: 50
+      },
+      resourceLimits: {
+        золото: 1000,
+        дерево: 500,
+        металл: 300
+      },
+      buildings: [],
+      units: [],
+      unitLimit: 10, // Базовый лимит юнитов
+      researched: new Set(),
+      selectedUnits: []
     };
     
-    // Инициализация начальных ресурсов
-    this.initResources();
+    // Контроллеры
+    this.unitsController = new PlayerUnitsController(scene);
+    
+    // Инициализация
+    this.initializeState();
   }
 
   // --- Управление ресурсами ---
@@ -62,20 +70,20 @@ export default class PlayerController {
 
   addResources(resources) {
     for (const res in resources) {
-      this.state.resources[res] = (this.state.resources[res] || 0) + resources[res];
+      const newAmount = (this.state.resources[res] || 0) + resources[res];
+      this.state.resources[res] = Math.min(newAmount, this.state.resourceLimits[res]);
     }
     this.updateResourceDisplay();
   }
 
   updateResourceDisplay() {
-    if (this.scene.resText) {
-      this.scene.resText.setText(this.getResourceString());
-    }
+    if (!this.scene || !this.scene.resText) return;
+    this.scene.resText.setText(this.getResourceString());
   }
 
   getResourceString() {
     return Object.entries(this.state.resources)
-      .map(([k, v]) => `${k}: ${v}`)
+      .map(([k, v]) => `${k}: ${v}/${this.state.resourceLimits[k]}`)
       .join('   ');
   }
 
@@ -85,7 +93,10 @@ export default class PlayerController {
     if (!buildingData) return null;
 
     // Проверяем ресурсы
-    if (!this.hasResources(buildingData.cost)) return null;
+    if (!this.hasResources(buildingData.cost)) {
+      console.warn('Недостаточно ресурсов для строительства');
+      return null;
+    }
 
     // Создаем соответствующий контроллер
     let building;
@@ -107,26 +118,15 @@ export default class PlayerController {
     this.spendResources(buildingData.cost);
 
     // Добавляем здание
-    this.addBuilding(building);
-
-    // Обновляем лимиты
-    this.updateLimits();
-
-    return building;
-  }
-
-  addBuilding(building) {
     this.state.buildings.push(building);
-    this.updateLimits();
-    this.checkMissionGoals();
+    
+    return building;
   }
 
   removeBuilding(building) {
     const index = this.state.buildings.indexOf(building);
     if (index !== -1) {
       this.state.buildings.splice(index, 1);
-      this.updateLimits();
-      this.checkMissionGoals();
     }
   }
 
@@ -165,11 +165,11 @@ export default class PlayerController {
 
   // --- Управление исследованиями ---
   hasResearch(researchId) {
-    return this.state.research.has(researchId);
+    return this.state.researched.has(researchId);
   }
 
   addResearch(research) {
-    this.state.research.add(research.id);
+    this.state.researched.add(research.id);
     
     // Применяем бонусы исследования
     if (research.bonus) {
@@ -190,8 +190,16 @@ export default class PlayerController {
     const pos = this.findFreePositionNearBuilding(building);
     if (!pos) return null;
 
-    // Создаем юнита
-    const unit = this.scene.createUnit(unitType, pos.x, pos.y);
+    // Создаем юнита соответствующего типа
+    let unit;
+    if (unitType.id === 'worker') {
+      unit = new WorkerUnit(this.scene, pos.x, pos.y, unitType);
+    } else if (unitType.canAttack) {
+      unit = new CombatUnit(this.scene, pos.x, pos.y, unitType);
+    } else {
+      unit = new BaseUnit(this.scene, pos.x, pos.y, unitType);
+    }
+
     if (unit) {
       this.addUnit(unit);
     }
@@ -223,6 +231,7 @@ export default class PlayerController {
   removeUnit(unit) {
     const index = this.state.units.indexOf(unit);
     if (index !== -1) {
+      unit.destroy();
       this.state.units.splice(index, 1);
       this.checkMissionGoals();
     }
@@ -301,6 +310,9 @@ export default class PlayerController {
 
   // --- Обновление состояния ---
   update(time, delta) {
+    // Обновляем лимит юнитов
+    this.state.unitLimit = this.calculateUnitLimit();
+
     // Обновляем состояние целей, зависящих от времени
     this.checkMissionGoals();
     
@@ -311,7 +323,89 @@ export default class PlayerController {
     
     // Обновляем состояние юнитов
     for (const unit of this.state.units) {
-      if (unit.update) unit.update(time, delta);
+      unit.update(time, delta);
     }
+
+    // Удаляем мертвых юнитов
+    this.state.units = this.state.units.filter(unit => {
+      if (unit.state === UNIT_STATES.DEAD) {
+        // Удаляем из выбранных, если был выбран
+        const selectedIndex = this.state.selectedUnits.indexOf(unit);
+        if (selectedIndex !== -1) {
+          this.state.selectedUnits.splice(selectedIndex, 1);
+        }
+        return false;
+      }
+      return true;
+    });
+
+    // Обновляем отображение ресурсов
+    this.updateResourceDisplay();
+  }
+
+  orderUnit(unitType) {
+    // Находим подходящую фабрику для производства
+    const factory = this.state.buildings.find(building => 
+      building instanceof UnitFactoryController && 
+      building.type.id === unitType.building &&
+      building.state !== BUILDING_STATES.CONSTRUCTION
+    );
+
+    if (!factory) {
+      console.warn(`Нет доступной фабрики типа ${unitType.building} для создания ${unitType.name}`);
+      return false;
+    }
+
+    return factory.queueUnit(unitType, this);
+  }
+
+  getUnitFactories() {
+    return this.state.buildings.filter(
+      building => building instanceof UnitFactoryController
+    );
+  }
+
+  calculateUnitLimit() {
+    // Базовый лимит + бонус от каждой фабрики
+    const factoryBonus = this.getUnitFactories()
+      .filter(factory => factory.state !== BUILDING_STATES.CONSTRUCTION)
+      .reduce((total, factory) => total + factory.unitLimit, 0);
+    
+    return this.state.unitLimit + factoryBonus;
+  }
+
+  // --- Управление выбором юнитов ---
+  selectUnits(units) {
+    // Снимаем выделение с предыдущих юнитов
+    this.state.selectedUnits.forEach(unit => unit.setSelected(false));
+    
+    // Выделяем новых
+    units.forEach(unit => unit.setSelected(true));
+    this.state.selectedUnits = units;
+  }
+
+  getSelectedUnits() {
+    return this.state.selectedUnits;
+  }
+
+  // --- Управление действиями юнитов ---
+  moveUnits(units, target) {
+    units.forEach(unit => unit.moveTo(target.x, target.y));
+  }
+
+  orderUnitsToAttack(units, target) {
+    units.forEach(unit => {
+      if (unit instanceof CombatUnit) {
+        unit.attackTarget = target;
+      }
+    });
+  }
+
+  orderWorkersToGather(workers, resource, deposit) {
+    workers.forEach(worker => {
+      if (worker instanceof WorkerUnit) {
+        worker.startGathering(resource, deposit);
+      }
+    });
   }
 } 
