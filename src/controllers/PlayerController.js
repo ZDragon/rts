@@ -1,7 +1,5 @@
 import { BUILDINGS } from '../entities/buildings/Buildings.js';
-import { UNITS } from '../entities/units/Units.js';
-import { BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController, BUILDING_STATES } from '../entities/buildings/BuildingController.js';
-import PlayerUnitsController from '../entities/units/PlayerUnits.js';
+import { BuildingController, BUILDING_STATES } from '../entities/buildings/BuildingController.js';
 import { BaseUnit, WorkerUnit, CombatUnit, UNIT_STATES } from '../entities/units/BaseUnit.js';
 import { DEFAULT_STARTING_RESOURCES, DEFAULT_RESOURCE_LIMITS } from '../entities/resources/ResourceTypes.js';
 
@@ -507,7 +505,7 @@ export default class PlayerController {
       for (const resource of this.scene.resourceDeposits) {
         const distance = Phaser.Math.Distance.Between(
           worldPoint.x, worldPoint.y,
-          resource.circ.x, resource.circ.y
+          resource.x, resource.y
         );
         if (distance < CLICK_RADIUS) {
           return {

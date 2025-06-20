@@ -11,6 +11,19 @@ export default class AIEnemy {
     this.pathfinder = new PathfindingController();
     // Передаём стартовые ресурсы в стратегa
     this.strategist = new AIStrategist(scene, this, DEFAULT_AI_STARTING_RESOURCES);
+    this.typeWorker = [{id: 'worker', upperLimit: 5, limit: 3, buildTime: 5, factory: 'factory'}];
+    this.typeCombat = [
+      {id: 'warrior', upperLimit: 10, limit: 2, buildTime: 5, factory: 'barracks'}, 
+      {id: 'archer', upperLimit: 7, limit: 2, buildTime: 5, factory: 'barracks'}, 
+      {id: 'siege', upperLimit: 5, limit: 1, buildTime: 15, factory: 'factory'}];
+    this.typeBuildings = [
+      {id: 'factory', upperLimit: 10, limit: 1, buildTime: 10},
+      {id: 'barracks', upperLimit: 10, limit: 1, buildTime: 10},
+      {id: 'hq', upperLimit: 10, limit: 1, buildTime: 10},
+      {id: 'warehouse', upperLimit: 10, limit: 2, buildTime: 10},
+      {id: 'lab', upperLimit: 10, limit: 1, buildTime: 10},
+      {id: 'tower', upperLimit: 10, limit: 5, buildTime: 10},
+    ];
   }
 
   update(dt, time) {

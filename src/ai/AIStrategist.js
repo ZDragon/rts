@@ -61,8 +61,8 @@ export default class AIStrategist {
     // Оцениваем угрозу: если рядом с базой есть вражеские юниты или мало защитных построек/юнитов
     let threat = false;
     let enemyNear = false;
-    if (this.scene && this.scene.playerUnitsController && this.scene.playerUnitsController.units) {
-      const enemyUnits = this.scene.playerUnitsController.units;
+    if (this.scene && this.scene.playerController) {
+      const enemyUnits = this.scene.playerController.state.units;
       const hqs = buildings.filter(b => b.type?.id === 'hq' || b.type === 'hq');
       for (const hq of hqs) {
         for (const eu of enemyUnits) {
@@ -92,58 +92,36 @@ export default class AIStrategist {
     // Считаем по типам
     const countUnits = id => units.filter(u => u.type.id === id).length;
     const countBuildings = id => buildings.filter(b => b.type?.id === id || b.type === id).length + queue.filter(b => b.type === id || b.type?.id === id).length;
-    // --- Рабочие ---
-    const hqCount = countBuildings('hq');
-    const workerCount = countUnits('worker');
-    if (hqCount > 0 && workerCount < hqCount * 3) {
-      // Создаём рабочих, если приоритет развитие или рабочих очень мало
-      if (this.priority === 'development' || workerCount < 2) {
-        const hqs = buildings.filter(b => b.type?.id === 'hq' || b.type === 'hq');
-        for (const hq of hqs) {
-          if (units.filter(u => u.type.id === 'worker' && this.isNear(u, hq, 2)).length < 3) {
-            this.tryCreateUnit('worker', hq);
+    
+    this.ai.typeWorker.forEach(type => {
+      const hqCount = countBuildings(type.factory);
+      const workerCount = countUnits(type.id);
+      if (hqCount > 0 && workerCount < hqCount * type.limit) {
+        if (this.priority === 'development' || workerCount < type.limit) {
+          const hqs = buildings.filter(b => b.type?.id === 'hq' || b.type === 'hq');
+          for (const hq of hqs) {
+            if (units.filter(u => u.type.id === 'worker' && this.isNear(u, hq, 2)).length < 3) {
+              this.tryCreateUnit('worker', hq);
+            }
           }
         }
       }
-    }
-    // --- Солдаты ---
-    const barracksCount = countBuildings('barracks');
-    const soldierCount = countUnits('soldier');
-    if (barracksCount > 0 && soldierCount < barracksCount * 5) {
-      if (this.priority === 'defense' || soldierCount < 2) {
-        const barracks = buildings.filter(b => b.type?.id === 'barracks' || b.type === 'barracks');
-        for (const bar of barracks) {
-          if (units.filter(u => u.type.id === 'soldier' && this.isNear(u, bar, 2)).length < 5) {
-            this.tryCreateUnit('soldier', bar);
+    });
+
+    this.ai.typeCombat.forEach(type => {
+      const barracksCount = countBuildings(type.factory);
+      const soldierCount = countUnits(type.id);
+      if (barracksCount > 0 && soldierCount < barracksCount * type.limit) {
+        if (this.priority === 'defense' || soldierCount < type.limit) {
+          const barracks = buildings.filter(b => b.type?.id === 'barracks' || b.type === 'barracks');
+          for (const bar of barracks) {
+            if (units.filter(u => u.type.id === type.id && this.isNear(u, bar, 2)).length < type.limit) {
+              this.tryCreateUnit(type.id, bar);
+            }
           }
         }
       }
-    }
-    // --- Танки ---
-    const factoryCount = countBuildings('factory');
-    const tankCount = countUnits('tank');
-    if (factoryCount > 0 && tankCount < factoryCount * 3) {
-      if (this.priority === 'defense' && tankCount < 3) {
-        const factories = buildings.filter(b => b.type?.id === 'factory' || b.type === 'factory');
-        for (const fac of factories) {
-          if (units.filter(u => u.type.id === 'tank' && this.isNear(u, fac, 2)).length < 3) {
-            this.tryCreateUnit('tank', fac);
-          }
-        }
-      }
-    }
-    // --- Разведчики ---
-    const scoutCount = countUnits('scout');
-    if (barracksCount > 0 && scoutCount < 2) {
-      if (this.priority === 'development' && scoutCount < 2) {
-        const barracks = buildings.filter(b => b.type?.id === 'barracks' || b.type === 'barracks');
-        for (const bar of barracks) {
-          if (units.filter(u => u.type.id === 'scout' && this.isNear(u, bar, 4)).length < 2) {
-            this.tryCreateUnit('scout', bar);
-          }
-        }
-      }
-    }
+    });
   }
 
   // --- Попытка создать юнита у здания ---
@@ -319,46 +297,15 @@ export default class AIStrategist {
     const queue = this.buildings.buildQueue || [];
     // Считаем по id
     const count = id => buildings.filter(b => b.type?.id === id || b.type === id).length + queue.filter(b => b.type === id || b.type?.id === id).length;
-    // 1. Штаб
-    if (count('hq') === 0) {
-      const hqType = BUILDINGS.find(b => b.id === 'hq');
-      if (this.canAfford(hqType)) {
-        const spot = this.findFreeBuildSpot(hqType);
-        if (spot) this.build('hq', spot.x, spot.y);
+
+    this.ai.typeBuildings.forEach(type => {
+      const buildingCount = count(type.id);
+      const bType = BUILDINGS.find(b => b.id === type.id);
+      if (buildingCount < type.limit && this.canAfford(bType)) {
+        const spot = this.findFreeBuildSpot(bType);
+        if (spot) this.build(bType, spot.x, spot.y);
       }
-      return;
-    }
-    // 2. Склад (если много ресурсов и мало складов)
-    if (count('warehouse') < 1 && this.getResource('дерево') > 300) {
-      const whType = BUILDINGS.find(b => b.id === 'warehouse');
-      if (this.canAfford(whType)) {
-        const spot = this.findFreeBuildSpot(whType);
-        if (spot) this.build('warehouse', spot.x, spot.y);
-      }
-    }
-    // 3. Казармы (если нет или мало)
-    if (count('barracks') < 1) {
-      const barrType = BUILDINGS.find(b => b.id === 'barracks');
-      if (this.canAfford(barrType)) {
-        const spot = this.findFreeBuildSpot(barrType);
-        if (spot) this.build('barracks', spot.x, spot.y);
-      }
-    }
-    if (count('factory') < 1 && count('barracks') > 0 && this.getResource('металл') > 60) {
-      const facType = BUILDINGS.find(b => b.id === 'factory');
-      if (this.canAfford(facType)) {
-        const spot = this.findFreeBuildSpot(facType);
-        if (spot) this.build('factory', spot.x, spot.y);
-      }
-    }
-    // 5. Башня (если мало защитных построек)
-    if (count('tower') < 2 && count('hq') > 0) {
-      const towType = BUILDINGS.find(b => b.id === 'tower');
-      if (this.canAfford(towType)) {
-        const spot = this.findFreeBuildSpot(towType);
-        if (spot) this.build('tower', spot.x, spot.y);
-      }
-    }
+    });
   }
 
   canAfford(buildingType) {

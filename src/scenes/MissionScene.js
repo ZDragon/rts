@@ -1,15 +1,12 @@
 import Phaser from 'phaser';
-import resourceManager from '../controllers/ResourceManager.js';
 import { BUILDINGS } from '../entities/buildings/Buildings.js';
 import { UNITS } from '../entities/units/Units.js';
 import { MAPS } from '../maps/Maps.js';
 import ResourceGathering from '../entities/resources/ResourceGathering.js';
 import AIEnemy from '../ai/AI.js';
-import PlayerUnitsController from '../entities/units/PlayerUnits.js';
 import ResourceDeposit from '../entities/resources/ResourceDeposit.js';
 import MinimapController from '../controllers/MinimapController.js';
 import PlayerController from '../controllers/PlayerController.js';
-import {BuildingController, StorageBuildingController, UnitFactoryController, ResearchLabController} from '../entities/buildings/BuildingController.js';
 
 const TILE_SIZE = 32;
 const MAP_SIZE = 100;
@@ -761,5 +758,13 @@ export default class MissionScene extends Phaser.Scene {
     this.selectedUnits.forEach(u => u.sprite.setStrokeStyle());
     this.selectedUnits = [];
     this.infoText.setText('Информация о выбранном объекте');
+  }
+
+  getAllUnits() {
+    const allUnits = this.playerController.state.units.filter(u => u.state !== 'destroyed');
+    this.aiEnemies.forEach(enemy => {
+      allUnits.push(...enemy.strategist.getAllUnits());
+    });
+    return allUnits;
   }
 } 

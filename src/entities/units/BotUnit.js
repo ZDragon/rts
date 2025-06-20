@@ -86,8 +86,8 @@ export default class BotUnit {
         }
       }
     }
-    if (this.scene.resourceObjects) {
-      for (const r of this.scene.resourceObjects) {
+    if (this.scene.resourceDeposits) {
+      for (const r of this.scene.resourceDeposits) {
         obstacles.add(`${r.x},${r.y}`);
       }
     }
@@ -160,8 +160,8 @@ export default class BotUnit {
     // Удаление из массива контроллера
     if (this.scene && this.scene.aiEnemies) {
       for (const ai of this.scene.aiEnemies) {
-        const idx = ai.unitsController && ai.unitsController.units ? ai.unitsController.units.indexOf(this) : -1;
-        if (idx !== -1) ai.unitsController.units.splice(idx, 1);
+        const idx = ai.strategist && ai.strategist.units.units ? ai.strategist.units.units.indexOf(this) : -1;
+        if (idx !== -1) ai.strategist.units.units.splice(idx, 1);
       }
     }
   }
