@@ -98,10 +98,10 @@ export default class AIStrategist {
       const workerCount = countUnits(type.id);
       if (hqCount > 0 && workerCount < hqCount * type.limit) {
         if (this.priority === 'development' || workerCount < type.limit) {
-          const hqs = buildings.filter(b => b.type?.id === 'hq' || b.type === 'hq');
+          const hqs = buildings.filter(b => b.type?.id === type.factory || b.type === type.factory);
           for (const hq of hqs) {
-            if (units.filter(u => u.type.id === 'worker' && this.isNear(u, hq, 2)).length < 3) {
-              this.tryCreateUnit('worker', hq);
+            if (units.filter(u => u.type.id === type.id && this.isNear(u, hq, 2)).length < 3) {
+              this.tryCreateUnit(type.id, hq, type);
             }
           }
         }
@@ -113,10 +113,10 @@ export default class AIStrategist {
       const soldierCount = countUnits(type.id);
       if (barracksCount > 0 && soldierCount < barracksCount * type.limit) {
         if (this.priority === 'defense' || soldierCount < type.limit) {
-          const barracks = buildings.filter(b => b.type?.id === 'barracks' || b.type === 'barracks');
+          const barracks = buildings.filter(b => b.type?.id === type.factory || b.type === type.factory);
           for (const bar of barracks) {
             if (units.filter(u => u.type.id === type.id && this.isNear(u, bar, 2)).length < type.limit) {
-              this.tryCreateUnit(type.id, bar);
+              this.tryCreateUnit(type.id, bar, type);
             }
           }
         }
@@ -125,7 +125,7 @@ export default class AIStrategist {
   }
 
   // --- Попытка создать юнита у здания ---
-  tryCreateUnit(unitId, building) {
+  tryCreateUnit(unitId, building, requestType) {
     const unitType = UNITS.find(u => u.id === unitId);
     if (!unitType) return;
     for (const res in unitType.cost) {
@@ -136,7 +136,10 @@ export default class AIStrategist {
     for (const res in unitType.cost) {
       this.spendResource(res, unitType.cost[res], `создание юнита ${unitType.name}`);
     }
-    this.createUnit(unitType, spot.x * 32 + 16, spot.y * 32 + 16);
+
+    console.log(`Создание юнита ${unitType.name} через ${requestType.buildTime} сек`);
+
+    this.createUnit(unitType, spot.x * 32 + 16, spot.y * 32 + 16, requestType);
   }
 
   // --- Поиск свободной клетки рядом с зданием ---
@@ -328,12 +331,16 @@ export default class AIStrategist {
   }
 
   // Пример: создать юнита
-  createUnit(type, x, y) {
-    return this.units.createUnit(type, x, y);
+  createUnit(type, x, y, requestType) {
+    console.log(`Создание юнита ${type.name} на ${x},${y}`);
+    return this.units.createUnit(type, x, y, requestType);
   }
 
   getAllUnits() {
     return this.units.getAllUnits();
+  }
+  getAvailableUnits() {
+    return this.units.getAvailableUnits();
   }
   getAllBuildings() {
     return this.buildings.getAllBuildings();
@@ -342,7 +349,7 @@ export default class AIStrategist {
   // --- Память о видимых объектах ---
   updateMemory() {
     // Видимость по всем своим юнитам и зданиям
-    const units = this.getAllUnits();
+    const units = this.getAvailableUnits();
     const vision = [];
     for (const u of units) {
       vision.push({ x: u.x, y: u.y, r: u.type.vision });
@@ -398,7 +405,7 @@ export default class AIStrategist {
 
   // --- Назначение задач рабочим ---
   assignWorkerTasks() {
-    const workers = this.getAllUnits().filter(u => u.type.id === 'worker' && u.isAlive());
+    const workers = this.getAvailableUnits().filter(u => u.type.id === 'worker' && u.isAlive());
     if (!workers.length) return;
     // Определяем приоритет ресурсов (по необходимости строительства/юнитов)
     const needed = this.getNeededResources();
@@ -429,7 +436,7 @@ export default class AIStrategist {
 
   // --- Назначение задач разведчикам ---
   assignScoutTasks() {
-    const scouts = this.getAllUnits().filter(u => u.type.id === 'scout' && u.isAlive());
+    const scouts = this.getAvailableUnits().filter(u => u.type.id === 'archer' && u.isAlive());
     if (!scouts.length) return;
     for (const scout of scouts) {
       // До контакта с игроком — разведка только вокруг базы
@@ -454,8 +461,8 @@ export default class AIStrategist {
 
   // --- Назначение задач боевым юнитам ---
   assignCombatTasks() {
-    const soldiers = this.getAllUnits().filter(u => u.type.id === 'soldier' && u.isAlive());
-    const tanks = this.getAllUnits().filter(u => u.type.id === 'tank' && u.isAlive());
+    const soldiers = this.getAvailableUnits().filter(u => u.type.id === 'soldier' && u.isAlive());
+    const tanks = this.getAvailableUnits().filter(u => u.type.id === 'tank' && u.isAlive());
     // --- Патруль/защита рабочих и базы ---
     const patrolPoints = this.getPatrolPoints();
     let i = 0;

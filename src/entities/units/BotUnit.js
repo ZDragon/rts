@@ -1,7 +1,7 @@
 import PathfindingController from '../../controllers/PathfindingController.js';
 
 export default class BotUnit {
-  constructor({ x, y, type, scene, owner }) {
+  constructor({ x, y, type, scene, owner, requestType }) {
     this.x = x;
     this.y = y;
     this.type = type; // объект типа юнита (id, name, speed, maxHP и т.д.)
@@ -21,6 +21,16 @@ export default class BotUnit {
     this.hpBarBg = null;
     this.statusLabel = null;
     this.stateData = {};
+    this.requestType = requestType;
+
+    this.setState('building');
+    setTimeout(() => {
+      this.onBuildingComplete();
+    }, requestType.buildTime * 1000);
+  }
+
+  onBuildingComplete() {
+    this.setState('idle');
     this.createVisuals();
   }
 
@@ -194,8 +204,13 @@ export default class BotUnit {
 export class BotScout extends BotUnit {
   constructor(opts) {
     super(opts);
-    this.setState('scout_idle');
   }
+
+  onBuildingComplete() {
+    this.setState('scout_idle');
+    this.createVisuals();
+  }
+
   createVisuals() {
     if (!this.scene || !this.scene.add) return;
     const color = 0x00bcd4; // голубой
@@ -231,12 +246,15 @@ export class BotScout extends BotUnit {
 export class BotWorker extends BotUnit {
   constructor(opts) {
     super(opts);
-    this.setState('worker_idle');
     this.gatherState = null; // to_resource, gathering, to_base
     this.gatherTarget = null;
     this.gatherCarried = 0;
     this.gatherTimer = 0;
     this.gatherBase = null;
+  }
+  onBuildingComplete() {
+    this.setState('worker_idle');
+    this.createVisuals();
   }
   createVisuals() {
     if (!this.scene || !this.scene.add) return;
@@ -363,12 +381,17 @@ export class BotWorker extends BotUnit {
 export class BotSoldier extends BotUnit {
   constructor(opts) {
     super(opts);
-    this.setState('soldier_idle');
     this.attackRadius = 28;
     this.attackCooldown = 0;
     this.attackDamage = 15;
     this.attackDelay = 0.7;
   }
+
+  onBuildingComplete() {
+    this.setState('soldier_idle');
+    this.createVisuals();
+  }
+
   createVisuals() {
     if (!this.scene || !this.scene.add) return;
     const color = 0xe53935; // красный
@@ -480,12 +503,17 @@ export class BotSoldier extends BotUnit {
 export class BotTank extends BotUnit {
   constructor(opts) {
     super(opts);
-    this.setState('tank_idle');
     this.attackRadius = 40;
     this.attackCooldown = 0;
     this.attackDamage = 30;
     this.attackDelay = 1.2;
   }
+
+  onBuildingComplete() {
+    this.setState('tank_idle');
+    this.createVisuals();
+  }
+
   createVisuals() {
     if (!this.scene || !this.scene.add) return;
     const color = 0x607d8b; // серо-синий
