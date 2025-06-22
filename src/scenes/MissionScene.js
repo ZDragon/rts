@@ -122,6 +122,7 @@ export default class MissionScene extends Phaser.Scene {
       const rect = this.add.rectangle(px, py, TILE_SIZE * 2, TILE_SIZE * 2, 0x1976d2).setDepth(50);
       const label = this.add.text(px, py, 'База игрока', { fontSize: '14px', color: '#fff', fontFamily: 'sans-serif' }).setOrigin(0.5).setDepth(51);
       this.playerBases.push({x: base.x, y: base.y, rect, label});
+      this.playerController.base = { x: base.x, y: base.y };
     }
     // --- Размещение баз врага ---
     this.enemyBases = [];
@@ -766,5 +767,12 @@ export default class MissionScene extends Phaser.Scene {
       allUnits.push(...enemy.strategist.getAllUnits());
     });
     return allUnits;
+  }
+
+  worldToTile(x, y) {
+    return {
+      x: Math.floor(x / TILE_SIZE),
+      y: Math.floor(y / TILE_SIZE)
+    };
   }
 } 

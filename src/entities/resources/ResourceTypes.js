@@ -36,10 +36,10 @@ export const RESOURCE_PROPERTIES = {
 
 // Стандартные начальные ресурсы
 export const DEFAULT_STARTING_RESOURCES = {
-  [RESOURCE_TYPES.GOLD]: 200,
-  [RESOURCE_TYPES.WOOD]: 100,
-  [RESOURCE_TYPES.STONE]: 50,
-  [RESOURCE_TYPES.METAL]: 30
+  [RESOURCE_TYPES.GOLD]: 2000,
+  [RESOURCE_TYPES.WOOD]: 1000,
+  [RESOURCE_TYPES.STONE]: 500,
+  [RESOURCE_TYPES.METAL]: 300
 };
 
 // Стандартные начальные ресурсы для ИИ

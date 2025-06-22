@@ -29,7 +29,10 @@ export const UNITS = [
     vision: 120,
     speed: 80,
     maxHP: 80,
-    canAttack: true
+    canAttack: true,
+    attackDamage: 7,
+    attackRange: 6,
+    attackCooldown: 0.5
   },
   {
     id: 'archer',
@@ -44,7 +47,10 @@ export const UNITS = [
     vision: 140,
     speed: 70,
     maxHP: 60,
-    canAttack: true
+    canAttack: true,
+    attackDamage: 15,
+    attackRange: 10,
+    attackCooldown: 0.8
   },
   {
     id: 'siege',
@@ -60,6 +66,9 @@ export const UNITS = [
     vision: 100,
     speed: 50,
     maxHP: 160,
-    canAttack: true
+    canAttack: true,
+    attackDamage: 20,
+    attackRange: 12,
+    attackCooldown: 1.2
   }
 ]; 

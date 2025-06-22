@@ -12,7 +12,8 @@ const UNIT_STATES = {
 
 // Базовый класс юнита
 export class BaseUnit {
-  constructor(scene, x, y, unitType) {
+  constructor(scene, x, y, unitType, owner) {
+    this.owner = owner;
     this.scene = scene;
     this.x = x;
     this.y = y;
@@ -31,6 +32,16 @@ export class BaseUnit {
     
     // Создаем визуальное представление
     this.createVisuals();
+  }
+
+  ensureParticleTexture() {
+    if (!this.scene.textures.exists('unitParticle')) {
+      const graphics = this.scene.add.graphics();
+      graphics.fillStyle(0xffffff);
+      graphics.fillCircle(2, 2, 2);
+      graphics.generateTexture('unitParticle', 4, 4);
+      graphics.destroy();
+    }
   }
 
   createVisuals() {
@@ -82,38 +93,46 @@ export class BaseUnit {
       { fontSize: '11px', color: '#ffb', fontFamily: 'sans-serif' }
     ).setOrigin(0.5).setDepth(52);
 
-    // Частицы для эффектов
-    const particleTexture = this.scene.textures.exists('pixel') ? 'pixel' : 'particle';
-    if (!this.scene.textures.exists(particleTexture)) {
-      // Создаем простую текстуру для частиц если нет ни одной подходящей
-      const graphics = this.scene.add.graphics();
-      graphics.fillStyle(0xffffff);
-      graphics.fillRect(0, 0, 2, 2);
-      graphics.generateTexture('particle', 2, 2);
-      graphics.destroy();
-    }
+    // Создаем текстуру для частиц
+    this.ensureParticleTexture();
 
-    this.particles = this.scene.add.particles(0, 0, particleTexture, {
-      lifespan: 1000,
-      gravityY: 100,
-      scale: { start: 1, end: 0 },
+    // Создаем эмиттер частиц с базовой конфигурацией
+    this.particles = this.scene.add.particles(this.x, this.y, 'unitParticle', {
+      speed: { min: 30, max: 80 },
+      angle: { min: 0, max: 360 },
+      scale: { start: 1.5, end: 0 },
       alpha: { start: 1, end: 0 },
-      tint: [this.type.color, 0xffffff],
+      lifespan: 4000,
       emitting: false
     }).setDepth(49);
+    
+    console.log('Created particle emitter for unit at:', this.x, this.y);
   }
 
   update(time, delta) {
-    if (this.state === UNIT_STATES.DEAD) return;
 
-    // Обновление движения
+    switch (this.state) {
+      case UNIT_STATES.MOVING:
+        this.updateMoving(delta);
+        break;
+      case UNIT_STATES.IDLE:
+        this.updateIdle(delta);
+        break;
+      default:
+        break;
+    }
+
+    // Обновление визуальных элементов
+    this.updateVisuals();
+  }
+
+  updateMoving(delta) {
     if (this.target) {
       const dx = this.target.x - this.x;
       const dy = this.target.y - this.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       
       if (dist > 2) {
-        this.state = UNIT_STATES.MOVING;
         const move = Math.min(this.speed * delta / 1000, dist);
         this.x += (dx / dist) * move;
         this.y += (dy / dist) * move;
@@ -121,12 +140,22 @@ export class BaseUnit {
         this.x = this.target.x;
         this.y = this.target.y;
         this.target = null;
-        this.state = UNIT_STATES.IDLE;
+        this.changeState(UNIT_STATES.IDLE);
+        this.onArrive();
       }
     }
+  }
 
-    // Обновление визуальных элементов
-    this.updateVisuals();
+  onArrive() {
+    // Действия при прибытии в точку
+  }
+
+  updateIdle(delta) {
+    // Обновляем ожидание
+  }
+
+  changeState(state) {
+    this.state = state;
   }
 
   updateVisuals() {
@@ -136,6 +165,11 @@ export class BaseUnit {
     this.hpBarBg.setPosition(this.x, this.y - 22);
     this.hpBar.setPosition(this.x - 16 + (this.hp / this.maxHP) * 16, this.y - 22);
     this.statusLabel.setPosition(this.x, this.y - 28);
+    
+    // Обновляем позицию эмиттера частиц
+    if (this.particles) {
+      this.particles.setPosition(this.x, this.y);
+    }
     
     // Обновляем HP бар
     this.hpBar.width = 32 * (this.hp / this.maxHP);
@@ -156,6 +190,10 @@ export class BaseUnit {
     }
   }
 
+  setStatusText(text) {
+    this.statusLabel.setText(text);
+  }
+
   takeDamage(amount) {
     if (this.state === UNIT_STATES.DEAD) return;
 
@@ -170,19 +208,8 @@ export class BaseUnit {
       yoyo: true
     });
 
-    // Частицы повреждения
-    this.particles.createEmitter({
-      x: this.x,
-      y: this.y,
-      speed: { min: 50, max: 100 },
-      angle: { min: 0, max: 360 },
-      scale: { start: 1, end: 0 },
-      lifespan: 500,
-      quantity: Math.ceil(amount / 10),
-      tint: 0xff0000,
-      emitting: false,
-      explode: true
-    });
+    // Эффект получения урона
+    this.emitDamageParticles(amount);
 
     if (this.hp === 0 && oldHp > 0) {
       this.die();
@@ -192,19 +219,8 @@ export class BaseUnit {
   die() {
     this.state = UNIT_STATES.DEAD;
 
-    // Большой взрыв
-    this.particles.createEmitter({
-      x: this.x,
-      y: this.y,
-      speed: { min: 100, max: 200 },
-      angle: { min: 0, max: 360 },
-      scale: { start: 2, end: 0 },
-      lifespan: 1000,
-      quantity: 30,
-      tint: [0xff0000, 0xff8800, 0xffff00],
-      emitting: false,
-      explode: true
-    });
+    // Эффект смерти
+    this.emitDeathParticles();
 
     // Анимация смерти
     this.scene.tweens.add({
@@ -228,6 +244,48 @@ export class BaseUnit {
     this.particles?.destroy();
   }
 
+  // Методы для работы с частицами
+  emitDamageParticles(damage) {
+    this.particles.setConfig({
+      tint: 0xff0000
+    });
+    this.particles.explode(Math.ceil(damage / 5), this.x, this.y);
+  }
+
+  emitDeathParticles() {
+    this.particles.setConfig({
+      tint: [0xff0000, 0xff8800, 0xffff00]
+    });
+    this.particles.explode(20, this.x, this.y);
+  }
+
+  emitGatheringParticles(resourceType) {
+    console.log('Emitting gathering particles for:', resourceType, 'at position:', this.x, this.y);
+    
+    if (!this.particles) {
+      console.warn('Particles emitter not found!');
+      return;
+    }
+    
+    // Обновляем позицию эмиттера
+    this.particles.setPosition(this.x, this.y);
+    
+    // Временно изменяем конфигурацию для цвета
+    this.particles.setConfig({
+      tint: this.getResourceColor(resourceType)
+    });
+    
+    // Взрыв частиц
+    this.particles.explode(5, this.x, this.y);
+  }
+
+  emitDepositParticles(resourceType, amount) {
+    this.particles.setConfig({
+      tint: this.getResourceColor(resourceType)
+    });
+    this.particles.explode(Math.min(amount, 10), this.x, this.y);
+  }
+
   setSelected(selected) {
     this.selected = selected;
     if (selected) {
@@ -239,21 +297,23 @@ export class BaseUnit {
 
   moveTo(x, y) {
     this.target = { x, y };
-    this.state = UNIT_STATES.MOVING;
+    this.changeState(UNIT_STATES.MOVING);
   }
 }
 
 // Рабочий юнит
 export class WorkerUnit extends BaseUnit {
-  constructor(scene, x, y, unitType) {
-    super(scene, x, y, unitType);
+  constructor(scene, x, y, unitType, owner) {
+    super(scene, x, y, unitType, owner);
     
     // Параметры добычи ресурсов
     this.gatherAmount = 2;  // Сколько добывает за раз
     this.carryCapacity = 10; // Сколько может нести
     this.carried = 0;        // Сколько несет сейчас
-    this.gatherTarget = null; // Цель добычи
-    this.depositTarget = null; // Куда нести ресурсы
+    this.carriedType = null; // Тип ресурса который несет
+    this.gatherTarget = null; // Цель добычи (ResourceDeposit)
+    this.gatherTimer = 0;    // Таймер добычи
+    this.gatherInterval = 1; // Интервал добычи в секундах
   }
 
   getStatusText() {
@@ -261,48 +321,176 @@ export class WorkerUnit extends BaseUnit {
       case UNIT_STATES.GATHERING:
         return `Добыча: ${this.carried}/${this.carryCapacity}`;
       case UNIT_STATES.MOVING:
-        return this.carried > 0 ? `Несёт: ${this.carried}` : 'Движение';
+        return this.carried > 0 ? `Несёт ${this.carriedType}: ${this.carried}` : 'Движение';
       case UNIT_STATES.IDLE:
-        return this.carried > 0 ? `Несёт: ${this.carried}` : 'Ожидание';
+        return this.carried > 0 ? `Несёт ${this.carriedType}: ${this.carried}` : 'Ожидание';
       default:
         return super.getStatusText();
     }
   }
 
-  startGathering(resource, deposit) {
-    this.gatherTarget = resource;
-    this.depositTarget = deposit;
-    this.moveTo(resource.x, resource.y);
+  IsOnBase() {
+    const dx = this.owner.base.x - this.x / 32;
+    const dy = this.owner.base.y - this.y / 32;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+      
+    return dist <= 2;
+  }
+
+  IsOnDeposit() {
+    if (!this.gatherTarget) return false;
+    const dx = this.gatherTarget.x - this.x / 32;
+    const dy = this.gatherTarget.y - this.y / 32;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+      
+    return dist <= 2;
+  }
+
+  onArrive() {
+    if (this.IsOnBase()) {
+      if (this.carried > 0) {
+        this.depositResources();
+        this.setStatusText('Сдача');
+      }
+    } else if (this.IsOnDeposit()) {
+      if (this.carried < this.carryCapacity) {
+        this.changeState(UNIT_STATES.GATHERING);
+        this.gatherTimer = 0;
+        this.setStatusText('Добыча');
+      } else {
+        this.returnToBase();
+      }
+    } else {
+      this.setStatusText('Прибытие');
+    }
+  }
+
+  startGathering(resourceType, deposit) {
+    this.gatherTarget = deposit;
+    this.carriedType = resourceType;
+    
+    // Если уже что-то несем и это другой тип ресурса - сначала сдаем на базу
+    if (this.carried > 0 && this.carriedType !== resourceType) {
+      this.returnToBase();
+      return;
+    }
+    
+    // Идем к ресурсу
+    this.moveTo(deposit.x * 32 + 16, deposit.y * 32 + 16); // Конвертируем тайловые координаты в мировые
   }
 
   update(time, delta) {
     super.update(time, delta);
 
-    if (this.state === UNIT_STATES.DEAD) return;
+    switch (this.state) {
+      case UNIT_STATES.GATHERING:
+        this.updateGathering(delta);
+        break;
+      default:
+        break;
+    }
+  }
 
-    // Логика добычи ресурсов
-    if (this.gatherTarget && !this.target) {
-      if (this.carried < this.carryCapacity) {
-        this.state = UNIT_STATES.GATHERING;
-        this.carried += this.gatherAmount;
-        if (this.carried >= this.carryCapacity) {
-          this.moveTo(this.depositTarget.x, this.depositTarget.y);
+  updateGathering(delta) {
+    if (!this.gatherTarget) {
+      this.changeState(UNIT_STATES.IDLE);
+      return;
+    }
+
+    // Проверяем, есть ли еще ресурсы в залежах
+    if (this.gatherTarget.amount <= 0) {
+      this.gatherTarget = null;
+      this.carriedType = null;
+      this.changeState(UNIT_STATES.IDLE);
+      this.statusLabel.setText('Залежи истощены');
+      return;
+    }
+
+    this.gatherTimer += delta / 1000;
+    
+    if (this.gatherTimer >= this.gatherInterval) {
+      this.gatherTimer = 0;
+      
+      // Добываем ресурс
+      const amountToGather = Math.min(
+        this.gatherAmount,
+        this.carryCapacity - this.carried,
+        this.gatherTarget.amount
+      );
+      
+      if (amountToGather > 0) {
+        this.carried += amountToGather;
+        this.gatherTarget.amount -= amountToGather;
+        
+        // Обновляем визуальное отображение залежей
+        if (this.gatherTarget.visuals && this.gatherTarget.visuals.amountLabel) {
+          this.gatherTarget.visuals.amountLabel.setText(this.gatherTarget.amount.toString());
         }
-      } else {
-        this.moveTo(this.depositTarget.x, this.depositTarget.y);
+        
+        // Визуальный эффект добычи
+        console.log('Gathering resource:', this.carriedType, 'amount:', amountToGather);
+        this.emitGatheringParticles(this.carriedType);
+      }
+      
+      // Если инвентарь полон или ресурсы закончились - идем на базу
+      if (this.carried >= this.carryCapacity || this.gatherTarget.amount <= 0) {
+        this.returnToBase();
       }
     }
+  }
+
+  returnToBase() {
+    if (this.owner && this.owner.base) {
+      this.moveTo(this.owner.base.x * 32 + 16, this.owner.base.y * 32 + 16);
+    }
+  }
+
+  depositResources() {
+    if (this.carried > 0 && this.carriedType && this.owner) {
+      // Добавляем ресурсы игроку
+      const resourcesToAdd = {};
+      resourcesToAdd[this.carriedType] = this.carried;
+      this.owner.addResources(resourcesToAdd);
+      
+                    // Визуальный эффект сдачи ресурсов
+       this.emitDepositParticles(this.carriedType, this.carried);
+      
+      this.carried = 0;
+      
+      // Если есть активная цель добычи и в ней остались ресурсы - возвращаемся
+      if (this.gatherTarget && this.gatherTarget.amount > 0) {
+        this.moveTo(this.gatherTarget.x * 32 + 16, this.gatherTarget.y * 32 + 16);
+      } else {
+        // Иначе переходим в режим ожидания
+        this.gatherTarget = null;
+        this.carriedType = null;
+        this.changeState(UNIT_STATES.IDLE);
+      }
+    }
+  }
+
+  getResourceColor(resourceType) {
+    switch (resourceType) {
+      case 'металл': return 0x888888;
+      case 'энергия': return 0x00ffff;
+      case 'еда': return 0x00ff00;
+      default: return 0xffffff;
+    }
+  }
+
+  changeState(state) {
+    this.state = state;
   }
 }
 
 // Боевой юнит
 export class CombatUnit extends BaseUnit {
-  constructor(scene, x, y, unitType) {
-    super(scene, x, y, unitType);
+  constructor(scene, x, y, unitType, owner) {
+    super(scene, x, y, unitType, owner);
     
     // Боевые параметры
-    this.attackDamage = unitType.id === 'tank' ? 30 : 15;
-    this.attackRange = unitType.id === 'tank' ? 40 : 28;
+    this.attackDamage = unitType.attackDamage;
+    this.attackRange = unitType.attackRange;
     this.attackCooldown = 0;
     this.attackTarget = null;
   }
@@ -310,7 +498,9 @@ export class CombatUnit extends BaseUnit {
   getStatusText() {
     switch (this.state) {
       case UNIT_STATES.ATTACKING:
-        return 'Атака';
+        return this.attackTarget ? 'Атака' : 'Ищет цель';
+      case UNIT_STATES.MOVING:
+        return this.attackTarget ? 'Сближение' : 'Движение';
       case UNIT_STATES.RETREATING:
         return 'Отступление';
       default:
@@ -323,56 +513,82 @@ export class CombatUnit extends BaseUnit {
 
     if (this.state === UNIT_STATES.DEAD) return;
 
+    // Обновление кулдауна атаки
+    if (this.attackCooldown > 0) {
+      this.attackCooldown -= delta / 1000;
+    }
+
     // Логика атаки
     if (this.attackTarget) {
-      let targetPos = this.getTargetPosition();
-      if (!targetPos) {
+      // Проверяем, жива ли цель
+      if (this.isTargetDead()) {
         this.attackTarget = null;
+        this.changeState(UNIT_STATES.IDLE);
         return;
       }
 
-      const dist = PhaserMath.Distance.Between(
+      const targetPos = this.getAttackTargetPosition();
+      if (!targetPos) {
+        this.attackTarget = null;
+        this.changeState(UNIT_STATES.IDLE);
+        return;
+      }
+
+      const distToTarget = PhaserMath.Distance.Between(
         this.x, this.y,
         targetPos.x, targetPos.y
       );
 
-      if (dist > this.attackRange) {
-        // Движемся к цели
-        this.state = UNIT_STATES.MOVING;
+      if (distToTarget > this.attackRange) {
+        // Цель вне радиуса - движемся к ней
+        this.changeState(UNIT_STATES.MOVING);
         this.moveTo(targetPos.x, targetPos.y);
       } else {
-        // Атакуем
-        this.state = UNIT_STATES.ATTACKING;
-        this.target = null;
+        // Цель в радиусе - атакуем
+        this.changeState(UNIT_STATES.ATTACKING);
+        this.target = null; // Останавливаем движение
 
         if (this.attackCooldown <= 0) {
           this.attack();
-          this.attackCooldown = this.type.id === 'tank' ? 1.2 : 0.7;
+          this.attackCooldown = this.type.attackCooldown;
         }
       }
-
-      this.attackCooldown -= delta / 1000;
+    } else if (this.state === UNIT_STATES.ATTACKING) {
+      // Если нет цели для атаки, переходим в режим ожидания
+      this.changeState(UNIT_STATES.IDLE);
     }
   }
 
-  getTargetPosition() {
-    if (!this.target) return null;
-
-    const angle = PhaserMath.Angle.Between(this.x, this.y, this.target.x, this.target.y);
-    const distance = PhaserMath.Distance.Between(this.x, this.y, this.target.x, this.target.y);
-    const attackDistance = Math.min(distance, this.attackRange);
-
+  // Получить позицию цели атаки
+  getAttackTargetPosition() {
+    if (!this.attackTarget) return null;
+    
+    // Возвращаем позицию цели атаки
     return {
-      x: this.target.x - Math.cos(angle) * attackDistance,
-      y: this.target.y - Math.sin(angle) * attackDistance
+      x: this.attackTarget.x,
+      y: this.attackTarget.y
     };
+  }
+
+  // Проверить, мертва ли цель
+  isTargetDead() {
+    if (!this.attackTarget) return true;
+    
+    // Проверяем разные типы целей
+    if (this.attackTarget.state === UNIT_STATES.DEAD) return true;
+    if (this.attackTarget.state === 'destroyed') return true;
+    if (this.attackTarget.hp !== undefined && this.attackTarget.hp <= 0) return true;
+    
+    return false;
   }
 
   attack() {
     if (!this.attackTarget) return;
 
-    const targetPos = this.getTargetPosition();
+    const targetPos = this.getAttackTargetPosition();
     if (!targetPos) return;
+
+    console.log(`${this.type.name} атакует цель на позиции:`, targetPos);
 
     // Визуальный эффект атаки
     const line = this.scene.add.line(
@@ -383,17 +599,54 @@ export class CombatUnit extends BaseUnit {
     ).setLineWidth(3).setDepth(200);
 
     this.scene.time.delayedCall(200, () => {
-      line.destroy();
+      line?.destroy();
     });
 
-    // Наносим урон
+    // Эффект выстрела
+    this.emitDamageParticles(5);
+
+    // Наносим урон цели
+    this.dealDamageToTarget();
+  }
+
+  // Универсальный метод нанесения урона
+  dealDamageToTarget() {
+    if (!this.attackTarget) return;
+
+    console.log(`Наносим ${this.attackDamage} урона цели типа:`, this.attackTarget.constructor.name);
+
+    // Проверяем различные методы получения урона
     if (typeof this.attackTarget.takeDamage === 'function') {
+      // Стандартный метод для юнитов
       this.attackTarget.takeDamage(this.attackDamage);
+    } else if (typeof this.attackTarget.receiveDamage === 'function') {
+      // Альтернативный метод для некоторых объектов ИИ
+      this.attackTarget.receiveDamage(this.attackDamage);
+    } else if (this.attackTarget.hp !== undefined) {
+      // Прямое уменьшение HP если нет специального метода
+      this.attackTarget.hp = Math.max(0, this.attackTarget.hp - this.attackDamage);
+      console.log(`HP цели после атаки: ${this.attackTarget.hp}`);
+    } else {
+      console.warn('Не удалось нанести урон цели - нет подходящего метода');
+    }
+  }
+
+  // Установить цель для атаки
+  setAttackTarget(target) {
+    this.attackTarget = target;
+    console.log(`${this.type.name} получил приказ атаковать:`, target.constructor.name);
+  }
+
+  // Очистить цель атаки
+  clearAttackTarget() {
+    this.attackTarget = null;
+    if (this.state === UNIT_STATES.ATTACKING) {
+      this.changeState(UNIT_STATES.IDLE);
     }
   }
 
   retreat() {
-    this.state = UNIT_STATES.RETREATING;
+    this.changeState(UNIT_STATES.RETREATING);
     this.attackTarget = null;
     // Здесь можно добавить логику отступления к ближайшему зданию
   }

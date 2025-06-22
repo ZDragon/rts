@@ -4,11 +4,12 @@ import { BaseUnit, WorkerUnit, CombatUnit, UNIT_STATES } from '../entities/units
 import { DEFAULT_STARTING_RESOURCES, DEFAULT_RESOURCE_LIMITS } from '../entities/resources/ResourceTypes.js';
 
 export default class PlayerController {
-  constructor(scene) {
+  constructor(scene, base) {
     if (!scene) {
       throw new Error('PlayerController requires a valid scene');
     }
     this.scene = scene;
+    this.base = base;
     
     // Состояние игрока
     this.state = {
@@ -173,11 +174,11 @@ export default class PlayerController {
     // Создаем юнита соответствующего типа
     let unit;
     if (unitType.id === 'worker') {
-      unit = new WorkerUnit(this.scene, pos.x, pos.y, unitType);
+      unit = new WorkerUnit(this.scene, pos.x, pos.y, unitType, this);
     } else if (unitType.canAttack) {
-      unit = new CombatUnit(this.scene, pos.x, pos.y, unitType);
+      unit = new CombatUnit(this.scene, pos.x, pos.y, unitType, this);
     } else {
-      unit = new BaseUnit(this.scene, pos.x, pos.y, unitType);
+      unit = new BaseUnit(this.scene, pos.x, pos.y, unitType, this);
     }
 
     if (unit) {
@@ -372,7 +373,7 @@ export default class PlayerController {
   orderUnitsToAttack(units, target) {
     units.forEach(unit => {
       if (unit instanceof CombatUnit) {
-        unit.attackTarget = target;
+        unit.setAttackTarget(target);
       }
     });
   }
@@ -499,13 +500,15 @@ export default class PlayerController {
   // Анализ цели клика
   analyzeClickTarget(worldPoint) {
     const CLICK_RADIUS = 32; // Радиус для определения клика по объекту
-    
+
     // Проверяем клик по ресурсам
     if (this.scene.resourceDeposits) {
       for (const resource of this.scene.resourceDeposits) {
+        const resourceWorldX = resource.x * 32 + 16; // Конвертируем тайловые в мировые
+        const resourceWorldY = resource.y * 32 + 16;
         const distance = Phaser.Math.Distance.Between(
           worldPoint.x, worldPoint.y,
-          resource.x, resource.y
+          resourceWorldX, resourceWorldY
         );
         if (distance < CLICK_RADIUS) {
           return {

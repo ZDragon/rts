@@ -602,13 +602,13 @@ export class UnitFactoryController extends BuildingController {
         let unit;
         switch(current.type.class) {
           case 'worker':
-            unit = new WorkerUnit(this.scene, spawnX, spawnY, current.type);
+            unit = new WorkerUnit(this.scene, spawnX, spawnY, current.type, this.scene.playerController);
             break;
           case 'combat':
-            unit = new CombatUnit(this.scene, spawnX, spawnY, current.type);
+            unit = new CombatUnit(this.scene, spawnX, spawnY, current.type, this.scene.playerController);
             break;
           default:
-            unit = new BaseUnit(this.scene, spawnX, spawnY, current.type);
+            unit = new BaseUnit(this.scene, spawnX, spawnY, current.type, this.scene.playerController);
         }
         
         // Добавляем юнита в контроллер игрока
