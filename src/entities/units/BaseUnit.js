@@ -30,6 +30,9 @@ export class BaseUnit {
     this.selected = false;
     this.target = null;
     
+    // Получаем ссылку на контроллер частиц
+    this.particleController = scene.particleController;
+    
     // Создаем визуальное представление
     this.createVisuals();
   }
@@ -246,44 +249,48 @@ export class BaseUnit {
 
   // Методы для работы с частицами
   emitDamageParticles(damage) {
-    this.particles.setConfig({
-      tint: 0xff0000
-    });
-    this.particles.explode(Math.ceil(damage / 5), this.x, this.y);
+    if (this.particleController) {
+      this.particleController.createEffect('sparks', this.x, this.y, {
+        quantity: Math.ceil(damage / 5),
+        speedMin: 30,
+        speedMax: 80,
+        color: 0xff0000
+      });
+    }
   }
 
   emitDeathParticles() {
-    this.particles.setConfig({
-      tint: [0xff0000, 0xff8800, 0xffff00]
-    });
-    this.particles.explode(20, this.x, this.y);
+    if (this.particleController) {
+      // Определяем тип юнита для соответствующего эффекта
+      const unitType = this.type.mechanical ? 'mechanical' : 'normal';
+      this.particleController.createUnitDeath(this.x, this.y, unitType);
+    }
   }
 
   emitGatheringParticles(resourceType) {
-    console.log('Emitting gathering particles for:', resourceType, 'at position:', this.x, this.y);
-    
-    if (!this.particles) {
-      console.warn('Particles emitter not found!');
-      return;
+    if (this.particleController) {
+      const resourceColor = this.getResourceColor(resourceType);
+      this.particleController.createEffect('dust', this.x, this.y, {
+        quantity: 5,
+        speedMin: 20,
+        speedMax: 50,
+        color: resourceColor,
+        lifespan: 800
+      });
     }
-    
-    // Обновляем позицию эмиттера
-    this.particles.setPosition(this.x, this.y);
-    
-    // Временно изменяем конфигурацию для цвета
-    this.particles.setConfig({
-      tint: this.getResourceColor(resourceType)
-    });
-    
-    // Взрыв частиц
-    this.particles.explode(5, this.x, this.y);
   }
 
   emitDepositParticles(resourceType, amount) {
-    this.particles.setConfig({
-      tint: this.getResourceColor(resourceType)
-    });
-    this.particles.explode(Math.min(amount, 10), this.x, this.y);
+    if (this.particleController) {
+      const resourceColor = this.getResourceColor(resourceType);
+      this.particleController.createEffect('sparks', this.x, this.y, {
+        quantity: Math.min(amount, 10),
+        speedMin: 40,
+        speedMax: 80,
+        color: resourceColor,
+        lifespan: 600
+      });
+    }
   }
 
   setSelected(selected) {

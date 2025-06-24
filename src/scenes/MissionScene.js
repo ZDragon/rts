@@ -7,6 +7,8 @@ import AIEnemy from '../ai/AI.js';
 import ResourceDeposit from '../entities/resources/ResourceDeposit.js';
 import MinimapController from '../controllers/MinimapController.js';
 import PlayerController from '../controllers/PlayerController.js';
+import ParticleController from '../controllers/ParticleController.js';
+import ParticleControllerDemo from '../controllers/ParticleControllerDemo.js';
 
 const TILE_SIZE = 32;
 const MAP_SIZE = 100;
@@ -34,6 +36,12 @@ export default class MissionScene extends Phaser.Scene {
   create() {
     // Инициализация контроллера игрока
     this.playerController = new PlayerController(this);
+    
+    // Инициализация контроллера частиц
+    this.particleController = new ParticleController(this);
+    
+    // Инициализация демо контроллера для тестирования эффектов
+    // this.particleDemo = new ParticleControllerDemo(this);
     
     // Устанавливаем цели миссии
     this.playerController.setMissionGoals([
@@ -297,10 +305,10 @@ export default class MissionScene extends Phaser.Scene {
 
   preload() {
     // Создаем текстуру для частиц
-    const pixelTexture = this.textures.createCanvas('pixel', 2, 2);
+    const pixelTexture = this.textures.createCanvas('particle', 4, 4);
     const context = pixelTexture.getContext();
     context.fillStyle = '#ffffff';
-    context.fillRect(0, 0, 2, 2);
+    context.fillRect(0, 0, 4, 4);
     pixelTexture.refresh();
   }
 
@@ -518,6 +526,16 @@ export default class MissionScene extends Phaser.Scene {
 
         if (building) {
           this.showMessage(`Строится: ${this.selectedBuilding.name}`);
+          
+          // Добавляем эффект частиц при начале строительства
+          const buildX = tileX * TILE_SIZE + (this.selectedBuilding.size * TILE_SIZE) / 2;
+          const buildY = tileY * TILE_SIZE + (this.selectedBuilding.size * TILE_SIZE) / 2;
+          this.particleController.createEffect('dust', buildX, buildY, {
+            quantity: 10,
+            speedMin: 20,
+            speedMax: 50
+          });
+          
           this.selectedBuilding = null;
           if (this.buildPreview) {
             this.buildPreview.destroy();

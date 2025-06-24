@@ -32,8 +32,8 @@ export class BuildingController {
     this.y = y;
     this.type = buildingType;
     
-    // Создаем систему частиц
-    this.particles = scene.add.particles('particle');
+    // Получаем ссылку на контроллер частиц сцены
+    this.particleController = scene.particleController;
     
     // Инициализация состояния
     this.state = BUILDING_STATES.CONSTRUCTION;
@@ -288,18 +288,19 @@ export class BuildingController {
       ease: 'Back.easeOut'
     });
 
-    // Частицы строительства
-    this.constructionParticles = this.particles.emit('particle', {
-      x: this.x * 32 + this.type.size * 16,
-      y: this.y * 32 + this.type.size * 16,
-      speed: { min: -50, max: 50 },
-      scale: { start: 1, end: 0 },
-      blendMode: 'ADD',
-      lifespan: 1000,
-      quantity: 2,
-      frequency: 100,
-      tint: 0xffff00
-    });
+    // Эффект строительства
+    if (this.particleController) {
+      const centerX = this.x * 32 + this.type.size * 16;
+      const centerY = this.y * 32 + this.type.size * 16;
+      this.constructionEffectId = `building_construction_${this.x}_${this.y}`;
+      this.particleController.createContinuousEffect(
+        'dust', 
+        centerX, 
+        centerY, 
+        this.constructionTime * 1000, 
+        this.constructionEffectId
+      );
+    }
   }
 
   update(time, delta) {
@@ -334,9 +335,9 @@ export class BuildingController {
     this.container.setAlpha(1);
     this.border.setStrokeStyle(2, 0xffffff, 0.5);
     
-    // Останавливаем частицы строительства
-    if (this.constructionParticles) {
-      this.constructionParticles.stop();
+    // Останавливаем эффект строительства
+    if (this.particleController && this.constructionEffectId) {
+      this.particleController.stopContinuousEffect(this.constructionEffectId);
     }
 
     // Эффект завершения строительства
@@ -349,17 +350,16 @@ export class BuildingController {
       ease: 'Quad.easeOut'
     });
 
-    // Вспышка частиц
-    this.particles.emit('particle', {
-      x: this.x * 32 + this.type.size * 16,
-      y: this.y * 32 + this.type.size * 16,
-      speed: { min: 50, max: 100 },
-      scale: { start: 1, end: 0 },
-      blendMode: 'ADD',
-      lifespan: 800,
-      quantity: 20,
-      tint: 0xffff00
-    });
+    // Вспышка частиц завершения строительства
+    if (this.particleController) {
+      const centerX = this.x * 32 + this.type.size * 16;
+      const centerY = this.y * 32 + this.type.size * 16;
+      this.particleController.createEffect('sparks', centerX, centerY, {
+        quantity: 15,
+        speedMin: 50,
+        speedMax: 100
+      });
+    }
   }
 
   takeDamage(amount) {
@@ -374,17 +374,17 @@ export class BuildingController {
       yoyo: true
     });
 
-    // Частицы повреждения
-    this.particles.emit('particle', {
-      x: this.x * 32 + this.type.size * 16,
-      y: this.y * 32 + this.type.size * 16,
-      speed: { min: 50, max: 100 },
-      scale: { start: 1, end: 0 },
-      blendMode: 'ADD',
-      lifespan: 500,
-      quantity: Math.ceil(amount / 10),
-      tint: 0xff0000
-    });
+    // Эффект повреждения
+    if (this.particleController) {
+      const centerX = this.x * 32 + this.type.size * 16;
+      const centerY = this.y * 32 + this.type.size * 16;
+      this.particleController.createEffect('sparks', centerX, centerY, {
+        quantity: Math.ceil(amount / 10),
+        speedMin: 30,
+        speedMax: 80,
+        color: 0xff0000
+      });
+    }
 
     if (this.hp === 0 && oldHp > 0) {
       this.destroy();
@@ -394,17 +394,17 @@ export class BuildingController {
   destroy() {
     this.state = BUILDING_STATES.DESTROYED;
     
-    // Большой взрыв
-    this.particles.emit('particle', {
-      x: this.x * 32 + this.type.size * 16,
-      y: this.y * 32 + this.type.size * 16,
-      speed: { min: 100, max: 200 },
-      scale: { start: 2, end: 0 },
-      blendMode: 'ADD',
-      lifespan: 1000,
-      quantity: 50,
-      tint: [0xff0000, 0xff8800, 0xffff00]
-    });
+    // Эффект разрушения здания
+    if (this.particleController) {
+      const centerX = this.x * 32 + this.type.size * 16;
+      const centerY = this.y * 32 + this.type.size * 16;
+      this.particleController.createBuildingDestruction(
+        this.x * 32, 
+        this.y * 32, 
+        this.type.size * 32, 
+        this.type.size * 32
+      );
+    }
 
     // Анимация разрушения
     this.scene.tweens.add({
@@ -416,7 +416,6 @@ export class BuildingController {
       ease: 'Back.easeIn',
       onComplete: () => {
         this.container.destroy();
-        this.particles.destroy();
         this.scene.playerController.removeBuilding(this);
       }
     });
@@ -427,21 +426,24 @@ export class BuildingController {
     this.progressBar.setVisible(true);
     this.progressBarBg.setVisible(true);
     
-    // Эффект начала производства
-    this.productionParticles = this.particles.emit('particle', {
-      x: this.x * 32 + this.type.size * 16,
-      y: this.y * 32 + this.type.size * 16,
-      speed: { min: 20, max: 40 },
-      scale: { start: 0.5, end: 0 },
-      blendMode: 'ADD',
-      frequency: 500,
-      tint: 0x00ffff
-    });
+    // Эффект производства
+    if (this.particleController) {
+      const centerX = this.x * 32 + this.type.size * 16;
+      const centerY = this.y * 32 + this.type.size * 16;
+      this.productionEffectId = `building_production_${this.x}_${this.y}`;
+      this.particleController.createContinuousEffect(
+        'magic', 
+        centerX, 
+        centerY, 
+        0, // бесконечно
+        this.productionEffectId
+      );
+    }
   }
 
   stopProduction() {
-    if (this.productionParticles) {
-      this.productionParticles.stop();
+    if (this.particleController && this.productionEffectId) {
+      this.particleController.stopContinuousEffect(this.productionEffectId);
     }
     this.state = BUILDING_STATES.IDLE;
     this.progressBar.setVisible(false);
