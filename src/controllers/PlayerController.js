@@ -370,10 +370,10 @@ export default class PlayerController {
     units.forEach(unit => unit.moveTo(target.x, target.y));
   }
 
-  orderUnitsToAttack(units, target) {
+  orderUnitsToAttack(units, target, targetType) {
     units.forEach(unit => {
       if (unit instanceof CombatUnit) {
-        unit.setAttackTarget(target);
+        unit.setAttackTarget(target, targetType);
       }
     });
   }
@@ -474,7 +474,7 @@ export default class PlayerController {
         // Только боевые юниты могут атаковать
         const combatUnits = selectedUnits.filter(unit => unit.type.canAttack);
         if (combatUnits.length > 0) {
-          this.orderUnitsToAttack(combatUnits, target.object);
+          this.orderUnitsToAttack(combatUnits, target.object, 'unit');
           this.scene.showMessage(`Атакуем вражеский юнит`);
         }
         break;
@@ -483,7 +483,7 @@ export default class PlayerController {
         // Только боевые юниты могут атаковать здания
         const attackers = selectedUnits.filter(unit => unit.type.canAttack);
         if (attackers.length > 0) {
-          this.orderUnitsToAttack(attackers, target.object);
+          this.orderUnitsToAttack(attackers, target.object, 'building');
           this.scene.showMessage(`Атакуем вражеское здание`);
         }
         break;

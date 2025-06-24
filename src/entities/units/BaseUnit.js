@@ -563,6 +563,13 @@ export class CombatUnit extends BaseUnit {
   getAttackTargetPosition() {
     if (!this.attackTarget) return null;
     
+    if (this.attackTargetType === 'building') {
+      return {
+        x: this.attackTarget.x * 32,
+        y: this.attackTarget.y * 32
+      };
+    }
+
     // Возвращаем позицию цели атаки
     return {
       x: this.attackTarget.x,
@@ -632,14 +639,16 @@ export class CombatUnit extends BaseUnit {
   }
 
   // Установить цель для атаки
-  setAttackTarget(target) {
+  setAttackTarget(target, targetType) {
     this.attackTarget = target;
+    this.attackTargetType = targetType;
     console.log(`${this.type.name} получил приказ атаковать:`, target.constructor.name);
   }
 
   // Очистить цель атаки
   clearAttackTarget() {
     this.attackTarget = null;
+    this.attackTargetType = null;
     if (this.state === UNIT_STATES.ATTACKING) {
       this.changeState(UNIT_STATES.IDLE);
     }
@@ -648,6 +657,7 @@ export class CombatUnit extends BaseUnit {
   retreat() {
     this.changeState(UNIT_STATES.RETREATING);
     this.attackTarget = null;
+    this.attackTargetType = null;
     // Здесь можно добавить логику отступления к ближайшему зданию
   }
 }
